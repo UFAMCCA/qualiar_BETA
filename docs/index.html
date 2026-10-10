@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>QUALIAR-UFAM · Previsão da qualidade do ar em Manaus</title>
+<meta name="description" content="Qualidade do ar em Manaus agora e prevista para as próximas 24 horas, em quatro classes alinhadas ao IQAr/CONAMA. PCU UFAM e CCA UFAM.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topo">
+  <div class="logos">
+    <img src="img/logo-pcu.svg" alt="PCU UFAM" height="40">
+    <img src="img/logo-cca.svg" alt="CCA UFAM" height="40">
+  </div>
+  <div class="marca">
+    <h1>QUALIAR-UFAM</h1>
+    <span>Qualidade do ar em Manaus · agora e nas próximas 24 horas</span>
+  </div>
+  <div class="atualiz" id="atualiz"><span>Carregando dados…</span></div>
+</header>
+<div class="aviso" id="aviso" hidden></div>
+
+<section class="destaque" aria-labelledby="t-prev">
+  <div class="agora-card" id="agora-card">
+    <span class="rotulo">Agora em Manaus</span>
+    <div class="agora-valor"><b id="ag-valor" class="num">–</b><small>µg/m³ PM2,5</small></div>
+    <div id="ag-classe"></div>
+    <p class="nota" id="ag-detalhe"></p>
+  </div>
+  <div class="prev-bloco">
+    <h2 id="t-prev">Previsão para as próximas horas</h2>
+    <div class="prev-cartoes" id="prev-cartoes"></div>
+    <div class="grafico-prev" id="grafico-prev" role="img" aria-label="PM2,5 observado nas últimas 24 horas e previsto para as próximas 24 horas"></div>
+    <p class="nota" id="prev-nota"></p>
+  </div>
+</section>
+
+<main class="painel-app">
+  <aside class="lateral">
+    <section class="bloco" aria-labelledby="t-ar">
+      <h2 id="t-ar">Estações · mediana e tendência</h2>
+      <div class="contadores" id="ar-contadores"></div>
+      <div class="tabela-rolagem">
+        <table class="tabela-s" id="tab-sensores">
+          <thead><tr><th>Estação</th><th>PM2,5</th><th>Classe</th><th>Dist. NAMA</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="nota">PM2,5 com a correção da EPA para sensores PurpleAir (Barkjohn et al., 2021 e 2022). A mediana usa só estações que passaram no controle de qualidade dos canais A/B.</p>
+    </section>
+
+    <section class="bloco" aria-labelledby="t-met">
+      <h2 id="t-met">Tempo · agora e próximas 24 h</h2>
+      <div class="met-grade" id="met-grade"></div>
+      <div class="chuva-obs" id="chuva-obs"></div>
+      <dl class="ficha" id="met-ficha"></dl>
+    </section>
+
+    <section class="bloco" aria-labelledby="t-fogo">
+      <h2 id="t-fogo">Focos nos municípios do entorno</h2>
+      <div class="contadores" id="fogo-contadores"></div>
+      <div class="filtros" role="group" aria-label="Horizonte do peso de cada município" id="h-sel"></div>
+      <p class="nota" id="vento-trajeto"></p>
+      <div class="tabela-rolagem alta">
+        <table class="tabela-s" id="tab-munis">
+          <thead><tr><th>Município</th><th title="focos ativos">Ativos</th><th title="extintos (estimado) há até 12 h">Recém-ext.</th><th title="focos ativos persistentes ou grandes">Prov. inc.</th><th title="distância do foco mais próximo à estação NAMA">Dist.</th><th title="parte da fumaça prevista que vem de cada município, no horizonte escolhido">Peso na fumaça</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="nota" id="fogo-nota"></p>
+    </section>
+
+    <section class="bloco" aria-labelledby="t-mod">
+      <h2 id="t-mod">Método e validação</h2>
+      <dl class="ficha" id="mod-ficha"></dl>
+      <div class="tabela-rolagem">
+        <table class="tabela-s" id="tab-val">
+          <thead><tr><th>Horizonte</th><th>n</th><th>Erro médio</th><th>Persistência</th><th>Classe certa</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="nota" id="val-chuva" hidden></p>
+      <p class="nota">Cada previsão emitida fica registrada e é comparada com a mediana dos próprios sensores PurpleAir quando a hora chega. "Persistência" é o erro de repetir o valor do momento da previsão: o modelo só ajuda onde erra menos que ela.</p>
+    </section>
+
+    <section class="bloco" aria-labelledby="t-cls">
+      <h2 id="t-cls">Classes de qualidade do ar</h2>
+      <div id="classes-lista"></div>
+      <p class="nota">Faixas do IQAr para PM2,5 (orientação técnica do MMA, 2025) e Resolução CONAMA nº 506/2024. As classes Muito Ruim e Péssima foram unidas, porque a recomendação é a mesma. A classe oficial usa a média de 24 h; a classe horária é indicativa.</p>
+      <p class="nota">Um trabalho do PCU UFAM e do CCA UFAM. Focos: <a href="https://ufamcca.github.io/MonitorBETA/" target="_blank" rel="noopener">MonitorBETA</a> (INPE e NASA FIRMS). PM2,5: PurpleAir. Tempo: Open-Meteo.</p>
+    </section>
+  </aside>
+  <div class="mapa-wrap">
+    <div class="mapa-botoes" role="group" aria-label="Enquadramento do mapa">
+      <button type="button" id="ver-cidade" aria-pressed="true">Cidade</button>
+      <button type="button" id="ver-regiao" aria-pressed="false">Região e focos</button>
+    </div>
+    <div id="mapa" role="region" aria-label="Mapa da qualidade do ar em Manaus"></div>
+  </div>
+</main>
+
+<script src="vendor/leaflet.js"></script>
+<script src="comum.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
