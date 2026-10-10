@@ -23,7 +23,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # Sempre a versão mais recente da branch (um "Re-run" usaria o commit antigo
+      # e entraria em conflito com os dados gravados depois dele).
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -37,6 +41,14 @@ jobs:
           git config user.name "qualiar-ufam[bot]"
           git config user.email "actions@users.noreply.github.com"
           git add docs/data
-          git diff --cached --quiet || git commit -m "Dados: $(TZ=America/Manaus date +'%d/%m %Hh')"
-          git pull --rebase --autostash
-          git push
+          if git diff --cached --quiet; then echo "Nada a publicar."; exit 0; fi
+          git commit -m "Dados: $(TZ=America/Manaus date +'%d/%m %Hh')"
+          # Se outra execução gravou dados no meio do caminho, prevalecem os desta
+          # execução, que são os mais recentes. Até 3 tentativas.
+          for i in 1 2 3; do
+            git pull --rebase -X theirs origin "${GITHUB_REF_NAME:-main}" && git push && exit 0
+            git rebase --abort 2>/dev/null || true
+            sleep $((i * 5))
+          done
+          echo "Não foi possível publicar os dados depois de 3 tentativas." >&2
+          exit 1
