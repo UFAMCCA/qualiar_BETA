@@ -1,0 +1,42 @@
+name: QUALIAR-UFAM (a cada hora)
+
+on:
+  schedule:
+    # Minuto 12 de cada hora (UTC). Os dados da PurpleAir são lidos nesse instante.
+    - cron: "12 * * * *"
+  workflow_dispatch:
+    inputs:
+      semear:
+        description: "Baixar também as últimas 24 h de médias horárias da PurpleAir (usar só na primeira vez)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dados
+  cancel-in-progress: false
+
+jobs:
+  coletar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Coletar, prever e validar
+        env:
+          PURPLEAIR_API_KEY: ${{ secrets.PURPLEAIR_API_KEY }}
+          INMET_TOKEN: ${{ secrets.INMET_TOKEN }}
+        run: python scripts/qualiar.py ${{ inputs.semear && '--semear' || '' }}
+      - name: Publicar dados
+        run: |
+          git config user.name "qualiar-ufam[bot]"
+          git config user.email "actions@users.noreply.github.com"
+          git add docs/data
+          git diff --cached --quiet || git commit -m "Dados: $(TZ=America/Manaus date +'%d/%m %Hh')"
+          git pull --rebase --autostash
+          git push
