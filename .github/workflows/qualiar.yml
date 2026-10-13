@@ -1,4 +1,4 @@
-name: QUALIAR-UFAM (a cada hora)
+name: QUALIAR-UFAM (por hora)
 
 on:
   schedule:
