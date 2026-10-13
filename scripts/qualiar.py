@@ -549,7 +549,14 @@ def prever(agora, p0, historico, meteo, focos, lavagem=None, chuva_obs=None):
             k = C.K_FOGO
         estado.update({"k_seco": round(k, 3), "anomalia_seca": round(e0, 1), "t_seco": iso(h0)})
     d0 = fator_diurno(m_agora, h0)
+    # nível de fundo regional: média das medianas observadas nas últimas 24 e 48 h
+    fundo, n_fundo = {}, {}
+    for W in C.JANELAS_FUNDO_H:
+        vals = [v for t, v in serie.items() if h0 - timedelta(hours=W) < parse_iso(t) <= h0]
+        n_fundo[W] = len(vals)
+        fundo[W] = (sum(vals) / len(vals) - C.PM_BASE) if len(vals) >= C.FUNDO_MIN_MEDICOES else e0
     chuva_acum = 0.0
+    chuvas_h = []
     prev = []
     for h in C.HORIZONTES:
         t = h0 + timedelta(hours=h)
@@ -558,6 +565,9 @@ def prever(agora, p0, historico, meteo, focos, lavagem=None, chuva_obs=None):
         # pancada em curso que o modelo não previu: continua um pouco nas próximas horas
         chuva_h = max(chuva_h, lav.get("mm_agora", 0.0) * C.NOWCAST_FRAC.get(h, 0.0))
         chuva_acum += chuva_h
+        chuvas_h.append(chuva_h)
+        # chuva "passageira": efeito da chuva das últimas horas, que se dissipa
+        chuva_ef = sum(c_ * math.exp(-(len(chuvas_h) - 1 - j) / C.TAU_CHUVA_H) for j, c_ in enumerate(chuvas_h))
         ifb_h, aneis_h, mun_h, setor_h = ifb(focos, ventos, t, agora, detalhar=h in C.DESTAQUES_H)
         dec = math.exp(-h / C.TAU_PERSIST_H)
         exc = e0 * dec + k * ifb_h * (1 - dec)
@@ -566,8 +576,16 @@ def prever(agora, p0, historico, meteo, focos, lavagem=None, chuva_obs=None):
         recup = lacuna * (1 - math.exp(-h / C.TAU_RECUPERACAO_H)) * dec
         exc += recup
         exc = max(0.0, exc) * math.exp(-C.LAMBDA_CHUVA * chuva_acum)
-        # fator diurno relativo ao agora; p0 já contém a condição atual
-        pm = max(1.0, (C.PM_BASE + exc) * fator_diurno(m, t) / d0)
+        # v0.3: fator diurno relativo ao agora; p0 já contém a condição atual
+        pm_v03 = max(1.0, (C.PM_BASE + exc) * fator_diurno(m, t) / d0)
+        variantes = {"v0.3": round(pm_v03, 1)}
+        fogo_local = k * ifb_h
+        for W in C.JANELAS_FUNDO_H:
+            alvo = max(fundo[W], fogo_local)
+            exc_f = (e0 * dec + alvo * (1 - dec) + max(0.0, tend) * C.TAU_TENDENCIA_H * (1 - math.exp(-h / C.TAU_TENDENCIA_H))
+                     + recup)
+            variantes[f"F{W}"] = round(max(1.0, C.PM_BASE + max(0.0, exc_f) * math.exp(-C.LAMBDA_CHUVA * chuva_ef)), 1)
+        pm = variantes[C.MODELO_PUBLICADO]
         sig = C.SIGMA_BASE + C.SIGMA_POR_RAIZ_H * math.sqrt(h)
         prev.append({
             "h": h, "t": iso(t), "pm": round(pm, 1),
@@ -576,6 +594,7 @@ def prever(agora, p0, historico, meteo, focos, lavagem=None, chuva_obs=None):
             "ifb": round(ifb_h, 2), "chuva_acum_mm": round(chuva_acum, 1),
             "ifb_aneis": [round(x, 2) for x in aneis_h], "setor": setor_h,
             "fogo_ug": round(k * ifb_h * (1 - dec), 1), "recuperacao_ug": round(recup, 1),
+            "variantes": variantes,
             "municipios": {mu: round(v / ifb_h, 3) for mu, v in sorted(mun_h.items(), key=lambda x: -x[1])} if ifb_h > 0 else {},
         })
     # média móvel de 24 h (observado + previsto) para a classe regulatória
@@ -600,6 +619,9 @@ def prever(agora, p0, historico, meteo, focos, lavagem=None, chuva_obs=None):
             "municipios_agora": {mu: round(v / ifb0, 3) for mu, v in sorted(mun0.items(), key=lambda x: -x[1])} if ifb0 > 0 else {},
             "k_usado": round(k, 2), "k_congelado_por_chuva": bool(lav.get("recente")),
             "lacuna_chuva_ug": round(lacuna, 1),
+            "modelo_publicado": C.MODELO_PUBLICADO,
+            "fundo_regional_ug": {f"{W}h": round(C.PM_BASE + fundo[W], 1) for W in C.JANELAS_FUNDO_H},
+            "fundo_medicoes": {f"{W}h": n_fundo[W] for W in C.JANELAS_FUNDO_H},
             "tendencia_h": round(tend, 2), "fator_diurno_agora": round(d0, 2)}
     return prev, info
 
@@ -627,6 +649,16 @@ def validar(log, historico, agora):
             "ganho_sobre_persistencia": round(1 - mae / mae_p, 2) if mae_p > 0 else None,
             "acerto_classe": round(sum(C.classe_de(e["prev"]) == C.classe_de(e["obs"]) for e in es) / len(es), 2),
         })
+        comp = {}
+        for v in C.VARIANTES:
+            ev = [e for e in es if v in (e.get("variantes") or {})]
+            if ev:
+                comp[v] = {"n": len(ev),
+                           "mae": round(sum(abs(e["variantes"][v] - e["obs"]) for e in ev) / len(ev), 1),
+                           "vies": round(sum(e["variantes"][v] - e["obs"] for e in ev) / len(ev), 1),
+                           "acerto_classe": round(sum(C.classe_de(e["variantes"][v]) == C.classe_de(e["obs"]) for e in ev) / len(ev), 2)}
+        if comp:
+            resumo[-1]["variantes"] = comp
         cnp = [e for e in es if e.get("chuva_np")]
         if cnp:
             resumo[-1].update({"n_chuva_np": len(cnp),
@@ -840,7 +872,8 @@ def main():
         for p in previsao:
             if p["h"] in C.DESTAQUES_H:
                 log["previsoes"].append({"emitida": iso(h0), "alvo": p["t"], "h": p["h"], "prev": p["pm"], "p0": p0,
-                                         "chuva_prev_mm": p["chuva_acum_mm"]})
+                                         "chuva_prev_mm": p["chuva_acum_mm"], "variantes": p["variantes"],
+                                         "modelo": C.MODELO_PUBLICADO})
     # efeito da chuva não prevista: o que se previa para agora antes da chuva x o observado
     efeito = None
     if lavagem["nao_prevista_recente"] and p0 is not None:
@@ -884,7 +917,7 @@ def main():
                   "criterios": {"recem_extinto_h": C.RECEM_EXTINTO_H, "incendio_duracao_h": C.INCENDIO_DURACAO_H,
                                 "incendio_pixels": C.INCENDIO_PIXELS, "incendio_frp_mw": C.INCENDIO_FRP_MW},
                   "aneis_km": C.IFB_ANEIS_KM},
-        "modelo": {"versao": "v0.3 heurística (persistência + fogo a barlavento + chuva prevista e observada + camada limite)", **info,
+        "modelo": {"versao": f"v0.4 · variante {C.MODELO_PUBLICADO} (fundo regional + fogo a barlavento + chuva prevista e observada)", **info,
                    "tem_925": any(l.get("v925") is not None for l in meteo),
                    "parametros": {"pm_base": C.PM_BASE, "tau_persist_h": C.TAU_PERSIST_H, "k_fogo_inicial": C.K_FOGO,
                                   "ifb_L_km": C.IFB_L_KM, "peso_925": C.VT_PESO_925, "sigma_ang": [C.SIGMA_ANG_MIN, C.SIGMA_ANG_MAX],
