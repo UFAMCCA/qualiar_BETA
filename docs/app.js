@@ -140,6 +140,7 @@
   const mo = d.modelo, an = d.focos.aneis_km;
   document.getElementById("mod-ficha").innerHTML = `
     <dt>Versão</dt><dd>${esc(mo.versao)}</dd>
+    ${mo.fundo_regional_ug ? `<dt>Fundo regional</dt><dd>${Object.entries(mo.fundo_regional_ug).map(([w, v]) => `${num(v, 0)} µg/m³ (média de ${w}, ${mo.fundo_medicoes?.[w] ?? "—"} medições)`).join(" · ")}</dd>` : ""}
     <dt>Fogo a barlavento</dt><dd><b>${num(mo.ifb_agora, 1)}</b> agora · ${an.map((a, i) => `${a[0]}–${a[1]} km: ${num(mo.ifb_aneis?.[i], 1)}`).join(" · ")}</dd>
     <dt>Peso do fogo</dt><dd>${num(mo.k_usado, 2)} µg/m³ por unidade (calibrado na hora)</dd>
     <dt>Vento de transporte</dt><dd>${mo.tem_925 ? `média vetorial: ${Math.round((1 - mo.parametros.peso_925) * 100)}% do vento a 10 m e ${Math.round(mo.parametros.peso_925 * 100)}% a 925 hPa (~800 m)` : "só vento a 10 m (925 hPa indisponível nesta rodada)"}</dd>
@@ -148,6 +149,19 @@
   document.querySelector("#tab-val tbody").innerHTML = d.validacao.map(v => v.n ? `<tr>
       <td>+${v.h} h</td><td class="n">${v.n}</td><td class="n">${num(v.mae, 1)}</td><td class="n">${num(v.mae_persistencia, 1)}</td>
       <td class="n">${num(v.acerto_classe * 100, 0, "%")}</td></tr>` : `<tr><td>+${v.h} h</td><td colspan="4" class="nota">aguardando a hora prevista chegar</td></tr>`).join("");
+  const comp = d.validacao.filter(v => v.variantes);
+  const elv = document.getElementById("val-variantes");
+  if (comp.length && elv) {
+    const nomes = Object.keys(comp[0].variantes);
+    const pub = d.modelo.modelo_publicado;
+    elv.innerHTML = `<table class="tabela-s"><thead><tr><th>Horizonte</th>${nomes.map(n => `<th class="n">${esc(n)}${n === pub ? " ★" : ""}</th>`).join("")}</tr></thead><tbody>` +
+      comp.map(v => `<tr><td>+${v.h} h <span class="nota">(${v.variantes[nomes[0]].n})</span></td>${nomes.map(n => {
+        const x = v.variantes[n]; if (!x) return `<td class="n">—</td>`;
+        const melhor = Math.min(...nomes.map(m => v.variantes[m]?.mae ?? Infinity)) === x.mae;
+        return `<td class="n">${melhor ? "<b>" : ""}${num(x.mae, 0)}${melhor ? "</b>" : ""} <span class="nota">${num(x.acerto_classe * 100, 0)}%</span></td>`;
+      }).join("")}</tr>`).join("") + `</tbody></table>`;
+    elv.hidden = false; document.getElementById("t-variantes").hidden = false;
+  }
   const vnp = d.validacao.filter(v => v.n_chuva_np);
   if (vnp.length) {
     const el = document.getElementById("val-chuva");
@@ -169,8 +183,8 @@
 
 function fogoLinha(p) {
   const top = Object.entries(p.municipios || {})[0];
-  if (!p.fogo_ug || p.fogo_ug < 1 || !top) return "fumaça de queimadas: pouca ou nenhuma";
-  return `fumaça de queimadas: <b>+${num(p.fogo_ug, 0)}</b> µg/m³<br>principal origem: ${esc(top[0])} (${num(top[1] * 100, 0)}%)`;
+  if (!p.fogo_ug || p.fogo_ug < 1 || !top) return "queimadas próximas: pouca ou nenhuma fumaça";
+  return `queimadas próximas: <b>~${num(p.fogo_ug, 0)}</b> µg/m³<br>principal origem: ${esc(top[0])} (${num(top[1] * 100, 0)}%)`;
 }
 
 /* Chuva prevista x observada: alerta, faixa horária e boletins dos aeroportos */
@@ -252,7 +266,7 @@ function spark(serie, v) {
 /* Gráfico principal: observado (24 h) + previsto (24 h) sobre as faixas de classe */
 function desenharGrafico(el, d, h0) {
   const obs = d.historico.map(h => ({ t: new Date(h.t), v: h.mediana }));
-  const prv = d.previsao.map(p => ({ t: new Date(p.t), v: p.pm, lo: p.lo, hi: p.hi, c: p.classe, m24: p.media24, c24: p.classe24 }));
+  const prv = d.previsao.map(p => ({ t: new Date(p.t), v: p.pm, lo: p.lo, hi: p.hi, c: p.classe, m24: p.media24, c24: p.classe24, var: p.variantes }));
   if (!obs.length && !prv.length) { el.innerHTML = ""; return; }
   const W = Math.max(320, Math.round(el.clientWidth || 900)), estreito = W < 600, H = estreito ? 200 : 230, mL = 30, mR = estreito ? 84 : 120, mT = 10, mB = 24;
   const t0 = +h0 - 24 * 3.6e6, t1 = +h0 + 24 * 3.6e6;
@@ -299,6 +313,15 @@ function desenharGrafico(el, d, h0) {
     if (mm >= 0.2) s += `<rect x="${X(+new Date(p.t)) - largura / 2}" y="${Y(0) - 7}" width="${Math.max(2, largura - 1)}" height="7" rx="1.5" fill="var(--chuva)" opacity=".4"><title>${hh(p.t)}: ${num(mm, 1)} mm previstos</title></rect>`;
   });
   if (reg.length || d.previsao.some(p => p.chuva_acum_mm > 0)) s += `<text x="${mL + 4}" y="${Y(0) - 10}" style="fill:var(--chuva)">chuva</text>`;
+  // variantes em teste (linhas finas, rótulo no fim)
+  const pub = d.modelo.modelo_publicado;
+  const nomesV = d.previsao.length && d.previsao[0].variantes ? Object.keys(d.previsao[0].variantes).filter(n => n !== pub) : [];
+  nomesV.forEach((n, k) => {
+    const pts = (ultimoObs ? [{ t: ultimoObs.t, v: ultimoObs.v }] : []).concat(d.previsao.map(p => ({ t: new Date(p.t), v: p.variantes[n] })));
+    s += `<path d="${pts.map((p, i) => `${i ? "L" : "M"}${X(+p.t).toFixed(1)} ${Y(p.v).toFixed(1)}`).join("")}" fill="none" stroke="var(--tinta-3)" stroke-width="1.2" stroke-dasharray="${k ? "1 3" : "3 3"}"><title>variante em teste: ${esc(n)}</title></path>`;
+    const ult = pts[pts.length - 1];
+    s += `<text x="${X(+ult.t) - 4}" y="${Math.max(mT + 22, Y(ult.v) - 5 - k * 11)}" text-anchor="end" style="fill:var(--tinta-3);font-size:10px">${esc(n)}</text>`;
+  });
   // agora
   s += `<line x1="${X(+h0)}" x2="${X(+h0)}" y1="${mT}" y2="${H - mB}" stroke="var(--acento)" stroke-width="1.5"/>`;
   s += `<text x="${X(+h0) - 6}" y="${mT + 10}" text-anchor="end">observado</text><text x="${X(+h0) + 6}" y="${mT + 10}">previsto</text>`;
@@ -318,7 +341,8 @@ function desenharGrafico(el, d, h0) {
     gp.setAttribute("cx", X(+alvo.t)); gp.setAttribute("cy", Y(alvo.v)); gp.setAttribute("opacity", 1);
     const c = classe(alvo.tipo === "prev" ? alvo.c : null) || CLASSES.find(k => k.ate == null || alvo.v <= k.ate);
     dica.innerHTML = `<b>${horaLocal(alvo.t.toISOString())}</b> · ${alvo.tipo === "prev" ? "previsto" : "observado"}<br>` +
-      `${num(alvo.v, 0)} µg/m³ · ${esc(c.nome)}` + (alvo.tipo === "prev" ? `<br>faixa ${num(alvo.lo, 0)}–${num(alvo.hi, 0)} · média 24 h ${num(alvo.m24, 0)}` : "");
+      `${num(alvo.v, 0)} µg/m³ · ${esc(c.nome)}` + (alvo.tipo === "prev" ? `<br>faixa ${num(alvo.lo, 0)}–${num(alvo.hi, 0)} · média 24 h ${num(alvo.m24, 0)}` +
+      (alvo.var ? `<br><span style="color:var(--tinta-3)">em teste: ${Object.entries(alvo.var).filter(([n]) => n !== d.modelo.modelo_publicado).map(([n, v]) => `${esc(n)} ${num(v, 0)}`).join(" · ")}</span>` : "") : "");
     dica.style.left = (X(+alvo.t) / W * r.width) + "px"; dica.style.top = (Y(alvo.v) / H * r.height - 10) + "px"; dica.hidden = false;
   };
   const sair = () => { dica.hidden = true; gx.setAttribute("opacity", 0); gp.setAttribute("opacity", 0); };
