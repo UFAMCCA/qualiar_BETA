@@ -173,6 +173,19 @@ LAMBDA_CHUVA = 0.30    # remoção por chuva, por mm acumulado
 BLH_REF_M = 800.0      # altura da camada limite de referência
 FATOR_DIURNO_MIN, FATOR_DIURNO_MAX = 0.6, 2.0
 SIGMA_BASE, SIGMA_POR_RAIZ_H = 0.15, 0.05   # incerteza log-normal
+# Modelo v0.4: nível de fundo regional (teste iniciado em 12/10/2026)
+# A fumaça de queimadas em Manaus costuma ser regional: a anomalia de agora não
+# decai para o "fogo local", e sim para o nível médio das últimas horas. O
+# alvo de longo prazo passa a ser max(fundo regional, K x IFB).
+JANELAS_FUNDO_H = (24, 48)
+FUNDO_MIN_MEDICOES = 3        # menos que isto na janela: usa a anomalia de agora
+TAU_CHUVA_H = 3.0             # o efeito de uma chuva prevista passa em ~3 h (não acumula para sempre)
+# Variante publicada no site; as outras rodam em paralelo e são validadas igual.
+#   "F24"  = fundo das últimas 24 h, sem ciclo da camada de mistura, chuva passageira
+#   "F48"  = idem, fundo das últimas 48 h
+#   "v0.3" = modelo anterior (decai para o fogo local; chuva acumulada; ciclo pela camada limite)
+MODELO_PUBLICADO = "F24"
+VARIANTES = ("F24", "F48", "v0.3")
 HORIZONTES = list(range(1, 25))
 DESTAQUES_H = [1, 3, 6, 12, 24]
 
