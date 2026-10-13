@@ -2,10 +2,11 @@ name: QUALIAR-UFAM (a cada hora)
 
 on:
   schedule:
-    # Reserva: o GitHub atrasa ou pula execuções agendadas. O disparo principal
-    # vem do Google Apps Script (scripts/google_apps_script.gs). A trava no
-    # coletor impede gastar pontos duas vezes na mesma hora.
-    - cron: "12 * * * *"
+    # O GitHub atrasa ou pula execuções agendadas. Por isso há quatro tentativas
+    # por hora: a primeira que rodar coleta; as outras encontram a hora já
+    # coletada e terminam sem chamar a PurpleAir (trava em scripts/qualiar.py).
+    # O disparo pelo Google Apps Script (scripts/google_apps_script.gs) é opcional.
+    - cron: "5,20,35,50 * * * *"
   workflow_dispatch:
     inputs:
       semear:
