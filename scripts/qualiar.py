@@ -693,6 +693,7 @@ def main():
     ap.add_argument("--semear", action="store_true")
     ap.add_argument("--agora")
     ap.add_argument("--focos-local", help="pasta com focos.geojson, resumo.json e limites.geojson")
+    ap.add_argument("--forcar", action="store_true", help="coleta mesmo que esta hora já tenha sido coletada")
     a = ap.parse_args()
 
     status = {}
@@ -718,6 +719,14 @@ def main():
     else:
         agora = datetime.now(UTC)
     h0 = hora_cheia(agora)
+
+    # Trava: a coleta pode ser disparada por mais de um agendador (GitHub e Google).
+    # Se esta hora já foi coletada com sucesso, não gasta pontos da PurpleAir de novo.
+    if not teste and not a.forcar and not a.semear:
+        ult = ler_json("qualiar.json", {})
+        if ult.get("hora_base") == iso(h0) and str(ult.get("fontes_status", {}).get("PurpleAir", "")).startswith("ok"):
+            print(f"Hora {iso(h0)} já coletada em {ult.get('gerado_em')}; nada a fazer (use --forcar para repetir).")
+            return
 
     historico = ler_json("historico.json", {"horas": []}) if not teste else {"horas": []}
     log = ler_json("validacao_log.json", {"previsoes": []}) if not teste else {"previsoes": []}
