@@ -1,4 +1,4 @@
-name: QUALIAR-UFAM (por hora)
+name: QUALIAR-UFAM (a cada hora)
 
 on:
   schedule:
@@ -15,6 +15,10 @@ on:
         default: false
       forcar:
         description: "Coletar de novo mesmo que esta hora já tenha sido coletada"
+        type: boolean
+        default: false
+      diagnostico:
+        description: "Recalcular a fumaça distante das últimas 60 h (grava diagnostico_regional.json)"
         type: boolean
         default: false
 
@@ -43,6 +47,9 @@ jobs:
           PURPLEAIR_API_KEY: ${{ secrets.PURPLEAIR_API_KEY }}
           INMET_TOKEN: ${{ secrets.INMET_TOKEN }}
         run: python scripts/qualiar.py ${{ inputs.semear && '--semear' || '' }} ${{ inputs.forcar && '--forcar' || '' }}
+      - name: Diagnóstico da fumaça distante
+        if: ${{ inputs.diagnostico }}
+        run: python scripts/regional.py --diagnostico
       - name: Publicar dados
         run: |
           git config user.name "qualiar-ufam[bot]"
