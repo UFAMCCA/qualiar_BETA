@@ -184,11 +184,64 @@ TAU_CHUVA_H = 3.0             # o efeito de uma chuva prevista passa em ~3 h (n�
 #   "F24"  = fundo das últimas 24 h, sem ciclo da camada de mistura, chuva passageira
 #   "F48"  = idem, fundo das últimas 48 h
 #   "v0.3" = modelo anterior (decai para o fogo local; chuva acumulada; ciclo pela camada limite)
+#   "F24P" = F24 + perfil horário aprendido com os últimos dias (metade da amplitude)
+#   "CAMS" = previsão de PM2,5 do CAMS (Copernicus) ajustada ao nível medido pela PurpleAir
+#   "F24N" = F24 + fator de madrugada sobre o fogo local (sem fumaça distante)
+#   "F24R" = F24 + fumaça distante (trajetória de 60 h sobre os focos do INPE) + fator de madrugada
 MODELO_PUBLICADO = "F24"
-VARIANTES = ("F24", "F48", "v0.3")
+VARIANTES = ("F24", "F48", "F24P", "CAMS", "F24N", "F24R", "v0.3")
+VARIANTES_NO_GRAFICO = ("F24R", "F24P", "CAMS")
+
+# Perfil horário (F24P): razão entre a mediana de cada hora e a média das 24 h
+# em torno dela, por hora local, mediana entre os dias disponíveis.
+PERFIL_AMPLITUDE = 0.5        # usa metade da amplitude aprendida (poucos dias = perfil ruidoso)
+PERFIL_MIN_HORAS = 18         # janelas de 24 h com menos medições que isto são ignoradas
+PERFIL_DIAS = 7               # usa no máximo os últimos 7 dias
+
+# CAMS (variante "CAMS"): previsão global de aerossóis do Copernicus, via Open-Meteo
+# (gratuito, sem chave). Enxerga o transporte regional de fumaça de focos fora da
+# área do MonitorBETA. Ajuste de nível: razão entre o medido e o CAMS nas últimas 24 h.
+CAMS_URL = "https://air-quality-api.open-meteo.com/v1/air-quality?"
+CAMS_FATOR_MIN, CAMS_FATOR_MAX = 0.2, 5.0
+CAMS_MIN_PARES = 12
+CAMS_TAU_H = 4.0              # peso do valor medido agora decai com esta escala
+# ---------------------------------------------------------------- fumaça distante (F24R)
+# Focos fora dos 13 municípios do MonitorBETA (Pará, sul do Amazonas, Rondônia...),
+# lidos direto dos mesmos arquivos públicos do INPE que o MonitorBETA usa. A 500 km,
+# o núcleo local exp(-d/75 km) daria peso ~0; por isso a fumaça distante é calculada
+# por uma retrotrajetória: de Manaus, volta-se no tempo seguindo o vento a 925 hPa
+# e soma-se o que queimava perto do caminho quando o ar passou por lá.
+INPE_FOCOS_URL = "https://dataserver-coids.inpe.br/queimadas/queimadas/focos/csv"
+REG_CAIXA = (-70.0, -13.0, -45.0, 5.0)      # oeste, sul, leste, norte (graus)
+REG_CELULA_GRAUS = 0.25                     # focos agregados por célula e por hora
+REG_GUARDA_H = 72                           # horas de focos guardadas
+REG_ARQUIVOS_MAX = 200                      # arquivos de 10 min baixados por rodada, no máximo
+REG_DIST_MIN_KM = 40.0                      # mais perto que isto é sempre fogo local
+REG_GRADE_LAT = (-11.0, -7.0, -3.0, 1.0)    # pontos de vento a 925 hPa (Open-Meteo, uma chamada)
+REG_GRADE_LON = (-66.0, -62.0, -58.0, -54.0, -50.0, -46.0)
+REG_TRAJ_H = 60                             # horas de retrotrajetória
+REG_SIGMA0_KM, REG_SIGMA_KMH = 30.0, 2.5    # largura da pluma: 30 km + 2,5 km por hora de viagem
+REG_TAU_H = 36.0                            # perda por diluição e deposição ao longo da viagem
+REG_ATIVO_H = 6                             # célula detectada há até 6 h conta como queimando
+REG_PERSISTENCIA = 0.6                      # emissão futura = focos das últimas 24 h x 0,6
+REG_FRP_REF_MW = 50.0
+K_REG_INICIAL = 1.0                         # µg/m³ por unidade de IFR, até calibrar
+K_REG_MIN, K_REG_MAX = 0.02, 50.0
+K_REG_MIN_HORAS = 12                        # horas com IFR relevante para calibrar
+IFR_MIN = 2.0
+
+# Madrugada (F24N e F24R): com ar parado junto ao chão e vento forte a ~800 m, a
+# fumaça viaja por cima da inversão noturna e desce de uma vez no começo da manhã
+# (16/10/2026: 30 -> 123 µg/m³ entre 04h e 05h). Multiplica o termo de fumaça.
+NOITE_A = 1.5                 # fator máximo = 1 + NOITE_A
+NOITE_BLH_M = 300.0           # camada de mistura abaixo disto = noite estável
+NOITE_V925_MIN, NOITE_V925_PLENO = 3.0, 8.0
+NOITE_HORAS = {3: 0.5, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 0.5, 10: 0.25}  # hora local -> peso
+RISCO_MATINAL_UG = 75.0       # aviso no site se F24R passar disto numa manhã com fator > 1,5
+
 HORIZONTES = list(range(1, 25))
 DESTAQUES_H = [1, 3, 6, 12, 24]
 
 # ---------------------------------------------------------------- arquivos
-HISTORICO_H = 96           # horas de mediana guardadas
+HISTORICO_H = 24 * 14      # horas de mediana guardadas (14 dias, para o perfil horário)
 VALIDACAO_DIAS = 60

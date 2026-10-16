@@ -29,6 +29,7 @@ from zoneinfo import ZoneInfo
 sys.path.insert(0, os.path.dirname(__file__))
 import config as C  # noqa: E402
 import chuva as R  # noqa: E402
+import regional as RG  # noqa: E402
 
 TZ = ZoneInfo(C.FUSO)
 UTC = timezone.utc
@@ -493,6 +494,35 @@ def ifb(focos, ventos: Ventos, t_alvo: datetime, agora: datetime, detalhar=False
     return tot, aneis, por_mun, setor
 
 
+# ================================================================ CAMS
+def coletar_cams(lat, lon):
+    """PM2,5 horário do CAMS (Copernicus) no ponto da NAMA: 2 dias passados e 2 futuros."""
+    q = {"latitude": lat, "longitude": lon, "hourly": "pm2_5", "timezone": "GMT", "timeformat": "unixtime",
+         "past_days": 2, "forecast_days": 2}
+    d = http_json(C.CAMS_URL + urllib.parse.urlencode(q))
+    h = d["hourly"]
+    return {datetime.fromtimestamp(ts, UTC): v for ts, v in zip(h["time"], h["pm2_5"]) if v is not None}
+
+
+def perfil_horario(serie: dict, h0: datetime):
+    """{hora local: fator} a partir das medianas observadas antes de h0, ou None se faltar dado."""
+    obs = {parse_iso(t): v for t, v in serie.items() if parse_iso(t) <= h0 and v}
+    inicio = h0 - timedelta(days=C.PERFIL_DIAS)
+    razoes = {}
+    for t, v in obs.items():
+        if t < inicio or t + timedelta(hours=12) > h0:
+            continue
+        jan = [obs[t + timedelta(hours=k)] for k in range(-12, 12) if t + timedelta(hours=k) in obs]
+        if len(jan) < C.PERFIL_MIN_HORAS:
+            continue
+        razoes.setdefault(t.astimezone(TZ).hour, []).append(v / (sum(jan) / len(jan)))
+    prof = {hr: median(v) for hr, v in razoes.items()}
+    if len(prof) < 18:
+        return None
+    m = sum(prof.values()) / len(prof)
+    return {hr: prof.get(hr, m) / m for hr in range(24)}
+
+
 # ================================================================ modelo v0
 def fator_diurno(linha_meteo, t: datetime):
     if linha_meteo and linha_meteo.get("blh"):
@@ -519,7 +549,13 @@ def prob_classes(pm, sigma):
     return [round(p, 3) for p in ps]
 
 
-def prever(agora, p0, historico, meteo, focos, lavagem=None, chuva_obs=None):
+def pulso(e0, dec, fundo, fumaca):
+    """Anomalia que decai de e0 para max(fundo, fumaça); se a fumaça prevista passa do que há
+    agora, o excesso entra inteiro (uma pluma que chega não é amortecida pela persistência)."""
+    return e0 * dec + max(fundo, fumaca) * (1 - dec) + max(0.0, fumaca - max(e0, fundo)) * dec
+
+
+def prever(agora, p0, historico, meteo, focos, lavagem=None, chuva_obs=None, cams=None, regional=None):
     h0 = hora_cheia(agora)
     met = {l["t"]: l for l in meteo}
     m_agora = met.get(iso(h0))
@@ -555,6 +591,17 @@ def prever(agora, p0, historico, meteo, focos, lavagem=None, chuva_obs=None):
         vals = [v for t, v in serie.items() if h0 - timedelta(hours=W) < parse_iso(t) <= h0]
         n_fundo[W] = len(vals)
         fundo[W] = (sum(vals) / len(vals) - C.PM_BASE) if len(vals) >= C.FUNDO_MIN_MEDICOES else e0
+    # perfil horário (F24P)
+    prof = perfil_horario(serie, h0)
+    hl0 = h0.astimezone(TZ).hour
+    r0 = 1 + C.PERFIL_AMPLITUDE * (prof[hl0] - 1) if prof else 1.0
+    # CAMS ajustado ao nível medido (razão medido/CAMS nas últimas 24 h)
+    fator_cams = None
+    if cams:
+        pares = [(v, cams[parse_iso(t)]) for t, v in serie.items()
+                 if h0 - timedelta(hours=24) < parse_iso(t) <= h0 and parse_iso(t) in cams and cams[parse_iso(t)] > 0]
+        if len(pares) >= C.CAMS_MIN_PARES:
+            fator_cams = min(C.CAMS_FATOR_MAX, max(C.CAMS_FATOR_MIN, sum(a for a, _ in pares) / sum(b for _, b in pares)))
     chuva_acum = 0.0
     chuvas_h = []
     prev = []
@@ -585,6 +632,30 @@ def prever(agora, p0, historico, meteo, focos, lavagem=None, chuva_obs=None):
             exc_f = (e0 * dec + alvo * (1 - dec) + max(0.0, tend) * C.TAU_TENDENCIA_H * (1 - math.exp(-h / C.TAU_TENDENCIA_H))
                      + recup)
             variantes[f"F{W}"] = round(max(1.0, C.PM_BASE + max(0.0, exc_f) * math.exp(-C.LAMBDA_CHUVA * chuva_ef)), 1)
+            if W == 24:
+                if prof:
+                    rt = 1 + C.PERFIL_AMPLITUDE * (prof[t.astimezone(TZ).hour] - 1)
+                    exc_p = (e0 * dec * (rt / r0) + alvo * (1 - dec) * rt
+                             + max(0.0, tend) * C.TAU_TENDENCIA_H * (1 - math.exp(-h / C.TAU_TENDENCIA_H)) + recup)
+                    variantes["F24P"] = round(max(1.0, C.PM_BASE + max(0.0, exc_p) * math.exp(-C.LAMBDA_CHUVA * chuva_ef)), 1)
+                else:
+                    variantes["F24P"] = variantes["F24"]
+        # CAMS: começa no valor medido agora e passa, em poucas horas, para o CAMS ajustado
+        if fator_cams and cams.get(t) is not None:
+            w = math.exp(-h / C.CAMS_TAU_H)
+            variantes["CAMS"] = round(max(1.0, p0 * w + fator_cams * cams[t] * (1 - w)), 1)
+        else:
+            variantes["CAMS"] = variantes["F24"]
+        # madrugada (F24N) e fumaça distante + madrugada (F24R)
+        noite, noite_det = RG.fator_noite(met, t)
+        ifr_t, uf_t = (regional or {}).get("ifr", {}).get(t, (0.0, {}))
+        k_reg = (regional or {}).get("k_reg", C.K_REG_INICIAL)
+        tend_f = max(0.0, tend) * C.TAU_TENDENCIA_H * (1 - math.exp(-h / C.TAU_TENDENCIA_H))
+        for nome, fum in (("F24N", fogo_local * noite), ("F24R", (fogo_local + k_reg * ifr_t) * noite)):
+            if nome == "F24R" and not regional:
+                variantes[nome] = variantes["F24N"]; continue
+            exc_n = pulso(e0, dec, fundo[24], fum) + tend_f + recup
+            variantes[nome] = round(max(1.0, C.PM_BASE + max(0.0, exc_n) * math.exp(-C.LAMBDA_CHUVA * chuva_ef)), 1)
         pm = variantes[C.MODELO_PUBLICADO]
         sig = C.SIGMA_BASE + C.SIGMA_POR_RAIZ_H * math.sqrt(h)
         prev.append({
@@ -595,6 +666,9 @@ def prever(agora, p0, historico, meteo, focos, lavagem=None, chuva_obs=None):
             "ifb_aneis": [round(x, 2) for x in aneis_h], "setor": setor_h,
             "fogo_ug": round(k * ifb_h * (1 - dec), 1), "recuperacao_ug": round(recup, 1),
             "variantes": variantes,
+            "noite": round(noite, 2), "noite_det": noite_det,
+            "ifr": round(ifr_t, 2), "fumaca_distante_ug": round(k_reg * ifr_t * noite, 1),
+            "ifr_uf": {u: round(x / ifr_t, 2) for u, x in sorted(uf_t.items(), key=lambda z: -z[1])[:4]} if ifr_t > 0 else {},
             "municipios": {mu: round(v / ifb_h, 3) for mu, v in sorted(mun_h.items(), key=lambda x: -x[1])} if ifb_h > 0 else {},
         })
     # média móvel de 24 h (observado + previsto) para a classe regulatória
@@ -622,8 +696,28 @@ def prever(agora, p0, historico, meteo, focos, lavagem=None, chuva_obs=None):
             "modelo_publicado": C.MODELO_PUBLICADO,
             "fundo_regional_ug": {f"{W}h": round(C.PM_BASE + fundo[W], 1) for W in C.JANELAS_FUNDO_H},
             "fundo_medicoes": {f"{W}h": n_fundo[W] for W in C.JANELAS_FUNDO_H},
+            "perfil_horario": {str(hr): round(v, 2) for hr, v in prof.items()} if prof else None,
+            "cams_fator": None if fator_cams is None else round(fator_cams, 2),
+            "cams_agora": None if not cams or cams.get(h0) is None else round(cams[h0], 1),
+            "variantes_no_grafico": list(C.VARIANTES_NO_GRAFICO),
+            "regional": None if not regional else {
+                "ifr_agora": round(regional["ifr"].get(h0, (0.0, {}))[0], 2),
+                "uf_agora": {u: round(x / max(regional["ifr"].get(h0, (0.0, {}))[0], 1e-9), 2) for u, x in
+                             sorted(regional["ifr"].get(h0, (0.0, {}))[1].items(), key=lambda z: -z[1])[:4]},
+                "k_reg": round(regional["k_reg"], 3), "k_reg_horas": regional["n_cal"],
+                "celulas": regional["celulas"], "trajetoria": regional["traj"],
+                "fumaca_agora_ug": round(regional["k_reg"] * regional["ifr"].get(h0, (0.0, {}))[0], 1)},
+            "risco_matinal": risco_matinal(prev),
             "tendencia_h": round(tend, 2), "fator_diurno_agora": round(d0, 2)}
     return prev, info
+
+
+def risco_matinal(prev):
+    """Primeira hora das próximas 18 em que F24R passa do limite numa manhã de fator alto."""
+    for p in prev:
+        if p["h"] <= 18 and p.get("noite", 1) > 1.5 and p["variantes"].get("F24R", 0) >= C.RISCO_MATINAL_UG:
+            return {"t": p["t"], "pm": p["variantes"]["F24R"], "fator": p["noite"], "origem": p.get("ifr_uf", {})}
+    return None
 
 
 # ================================================================ validação
@@ -708,6 +802,31 @@ def sinteticos(agora):
     return sens, meteo, anterior
 
 
+def sint_regional(agora):
+    """Focos sintéticos no oeste do Pará e vento de leste a 925 hPa, mais forte de madrugada."""
+    rnd = random.Random(3)
+    h0 = hora_cheia(agora)
+    cel = {}
+    for k in range(0, 60):
+        t = h0 - timedelta(hours=k)
+        for _ in range(25):
+            la, lo = -2.6 + rnd.gauss(0, 0.8), -55.0 + rnd.gauss(0, 1.0)
+            g = C.REG_CELULA_GRAUS
+            cel[f"{iso(t)}|{(math.floor(la / g) + .5) * g:.3f}|{(math.floor(lo / g) + .5) * g:.3f}"] = [rnd.uniform(1, 3), "PA"]
+    pontos = []
+    for la in C.REG_GRADE_LAT:
+        for lo in C.REG_GRADE_LON:
+            s = {}
+            for k in range(-72, 49):
+                t = h0 + timedelta(hours=k)
+                hl = t.astimezone(TZ).hour
+                vel = 6.0 + (3.0 if hl < 7 or hl > 20 else 0.0)
+                d = math.radians(95)
+                s[t] = (-vel * math.sin(d), -vel * math.cos(d), 0.0)
+            pontos.append((la, lo, s))
+    return {"celulas": cel}, RG.Campo(pontos)
+
+
 def sint_metar(h0):
     """Boletins sintéticos: como na noite de 9/10/2026, os aeroportos não registram a pancada dos bairros."""
     return [
@@ -790,12 +909,24 @@ def main():
         s["nama"] = bool(nama_s and not nama_s.get("_offline") and s["id"] == nama_s["id"])
         s["dist_nama_km"] = round(dist_km(nama["lat"], nama["lon"], s["lat"], s["lon"]), 1)
 
+    cams = {}
     if not teste:
         try:
             meteo = coletar_meteo(nama["lat"], nama["lon"])
             status["Open-Meteo"] = "ok"
         except Exception as e:
             status["Open-Meteo"] = f"erro: {e}"
+        try:
+            cams = coletar_cams(nama["lat"], nama["lon"])
+            status["CAMS"] = f"ok ({len(cams)} horas)"
+        except Exception as e:
+            status["CAMS"] = f"erro: {e}"
+    else:
+        # CAMS sintético: subestima o nível, mas traz um pico de madrugada
+        for k in range(-48, 49):
+            t = hora_cheia(agora) + timedelta(hours=k)
+            hl = t.astimezone(TZ).hour
+            cams[t] = 18 + 14 * math.exp(-((hl - 6) % 24 - 0) ** 2 / 8) + 6 * math.sin(k / 9)
 
     validos = [s for s in sensores if s["valido"]]
     p0 = round(median([s["pm"] for s in validos]), 1) if len(validos) >= C.SENSORES_MIN else None
@@ -832,7 +963,7 @@ def main():
     else:
         try:
             metar = R.coletar_metar(http_json, iso, h0)
-            status["METAR"] = f"ok ({len(metar)} aeroportos)"
+            status["METAR"] = f"ok ({len(metar)} aeroportos)" if metar else "ok (sem boletins recentes)"
         except Exception as e:
             status["METAR"] = f"erro: {e}"
         tok = os.environ.get("INMET_TOKEN", "").strip()
@@ -865,10 +996,35 @@ def main():
     focos = preparar_focos(focos_gj, nama, agora)
     munis = resumo_municipios(focos)
 
+    # fumaça distante: focos do INPE fora dos 13 municípios + retrotrajetórias
+    regional = None
+    try:
+        if teste:
+            cache_reg, campo = sint_regional(agora)
+            status["INPE regional"] = "dados sintéticos (teste)"
+        else:
+            cache_reg = ler_json("fogo_regional.json", {})
+            RG.atualizar_focos(cache_reg, agora, nama, RG.poligonos(limites), status)
+            campo = RG.Campo.coletar(http_json)
+            status["Vento regional"] = "ok"
+        idx = RG.indexar(cache_reg)
+        horas = [h0 + timedelta(hours=h) for h in range(0, 25)]
+        ifr_map, traj0 = RG.calcular(campo, idx, agora, nama, horas)
+        hist_reg = historico.setdefault("regional", [])
+        RG.preencher_historico(hist_reg, campo, idx, agora, nama, met)
+        serie_obs = {x["t"]: x["mediana"] for x in historico["horas"]}
+        k_reg, n_cal = RG.calibrar_k(hist_reg, serie_obs, h0, C.PM_BASE)
+        regional = {"ifr": ifr_map, "traj": traj0, "k_reg": k_reg, "n_cal": n_cal,
+                    "celulas": len(cache_reg.get("celulas", {}))}
+        if not teste:
+            RG.gravar_cache(C.DATA_DIR / "fogo_regional.json", cache_reg)
+    except Exception as e:
+        status["Fumaça distante"] = f"erro: {e}"
+
     # previsão
     previsao, info = ([], {})
     if p0 is not None:
-        previsao, info = prever(agora, p0, historico, meteo, focos, lavagem, chuva_obs)
+        previsao, info = prever(agora, p0, historico, meteo, focos, lavagem, chuva_obs, cams, regional)
         for p in previsao:
             if p["h"] in C.DESTAQUES_H:
                 log["previsoes"].append({"emitida": iso(h0), "alvo": p["t"], "h": p["h"], "prev": p["pm"], "p0": p0,

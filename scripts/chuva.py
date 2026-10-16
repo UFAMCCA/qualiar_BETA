@@ -59,7 +59,10 @@ def interpretar_metar(wx: str | None, raw: str | None):
 
 def coletar_metar(http_json, iso, h0):
     ids = ",".join(C.METAR_ESTACOES)
-    dados = http_json(C.METAR_URL.format(ids=ids), tentativas=2)
+    try:
+        dados = http_json(C.METAR_URL.format(ids=ids), tentativas=2)
+    except ValueError:      # resposta vazia: o serviço não tem boletim recente
+        return []
     por_est = {}
     for r in dados:
         est = r.get("icaoId")
