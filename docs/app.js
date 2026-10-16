@@ -55,8 +55,12 @@
   const notaChuva = lav.recente
     ? `<b>Chuva recente${lav.nao_prevista_recente ? " não prevista" : ""}</b> (há ${lav.horas_desde ? lav.horas_desde + " h" : "menos de 1 h"}): a previsão considera que a fumaça removida volta em cerca de ${d.chuva_obs.criterios.tau_recuperacao_h} h e não usa esta hora para recalibrar o peso do fogo. `
     : "";
+  const rm = d.modelo.risco_matinal;
+  const notaMatinal = rm
+    ? `<b>Risco de fumaça matinal</b>: a variante em teste F24R, que soma a fumaça de focos distantes e a descida da fumaça no começo da manhã, indica ${num(rm.pm, 0)} µg/m³ às ${hh(rm.t)}${Object.keys(rm.origem || {}).length ? ` (origem provável: ${Object.entries(rm.origem).map(([u, f]) => `${esc(u)} ${Math.round(f * 100)}%`).join(", ")})` : ""}. A previsão publicada ainda é a F24. `
+    : "";
   document.getElementById("prev-nota").innerHTML = pior
-    ? notaChuva + `Pior hora prevista nas próximas 24 h: <b>${hh(pior.t)}</b>, com ${num(pior.pm, 0)} µg/m³ (${esc(classe(pior.classe).nome)}). ` +
+    ? notaMatinal + notaChuva + `Pior hora prevista nas próximas 24 h: <b>${hh(pior.t)}</b>, com ${num(pior.pm, 0)} µg/m³ (${esc(classe(pior.classe).nome)}). ` +
       `As classes dos cartões usam o valor horário (indicativo); a classe oficial do IQAr usa a média de 24 h, mostrada abaixo do valor. Modelo ${esc(d.modelo.versao)}.`
     : "";
 
@@ -140,6 +144,10 @@
   const mo = d.modelo, an = d.focos.aneis_km;
   document.getElementById("mod-ficha").innerHTML = `
     <dt>Versão</dt><dd>${esc(mo.versao)}</dd>
+    ${mo.cams_fator != null ? `<dt>CAMS</dt><dd>${num(mo.cams_agora, 0)} µg/m³ agora no modelo; ajuste ao nível medido: ×${num(mo.cams_fator, 2)}</dd>` : ""}
+    ${mo.perfil_horario ? `<dt>Perfil horário</dt><dd>pico em ${Object.entries(mo.perfil_horario).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([h]) => h + "h").join(", ")} (aprendido dos últimos dias)</dd>` : ""}
+    ${mo.regional ? `<dt>Fumaça distante</dt><dd>índice ${num(mo.regional.ifr_agora, 1)} agora, ${num(mo.regional.fumaca_agora_ug, 0)} µg/m³ com o peso ${num(mo.regional.k_reg, 3)} (${mo.regional.k_reg_horas >= 12 ? `calibrado em ${mo.regional.k_reg_horas} h` : `ainda calibrando: ${mo.regional.k_reg_horas} de 12 h`})${Object.keys(mo.regional.uf_agora || {}).length ? ` · origem: ${Object.entries(mo.regional.uf_agora).map(([u, f]) => `${esc(u)} ${Math.round(f * 100)}%`).join(", ")}` : ""} · ${mo.regional.celulas} células com foco nas últimas 72 h (INPE)</dd>` : ""}
+    ${(() => { const pn = d.previsao.filter(p => p.noite > 1.05); if (!pn.length) return ""; const mx = pn.reduce((a, p) => p.noite > a.noite ? p : a); return `<dt>Madrugada</dt><dd>fumaça ×${num(mx.noite, 2)} às ${hh(mx.t)} (noite estável em ${Math.round((mx.noite_det?.estavel ?? 0) * 100)}% das horas, vento a 925 hPa de ${num(mx.noite_det?.v925_ms, 1)} m/s)</dd>`; })()}
     ${mo.fundo_regional_ug ? `<dt>Fundo regional</dt><dd>${Object.entries(mo.fundo_regional_ug).map(([w, v]) => `${num(v, 0)} µg/m³ (média de ${w}, ${mo.fundo_medicoes?.[w] ?? "—"} medições)`).join(" · ")}</dd>` : ""}
     <dt>Fogo a barlavento</dt><dd><b>${num(mo.ifb_agora, 1)}</b> agora · ${an.map((a, i) => `${a[0]}–${a[1]} km: ${num(mo.ifb_aneis?.[i], 1)}`).join(" · ")}</dd>
     <dt>Peso do fogo</dt><dd>${num(mo.k_usado, 2)} µg/m³ por unidade (calibrado na hora)</dd>
@@ -315,13 +323,19 @@ function desenharGrafico(el, d, h0) {
   if (reg.length || d.previsao.some(p => p.chuva_acum_mm > 0)) s += `<text x="${mL + 4}" y="${Y(0) - 10}" style="fill:var(--chuva)">chuva</text>`;
   // variantes em teste (linhas finas, rótulo no fim)
   const pub = d.modelo.modelo_publicado;
-  const nomesV = d.previsao.length && d.previsao[0].variantes ? Object.keys(d.previsao[0].variantes).filter(n => n !== pub) : [];
+  const disp = d.previsao.length && d.previsao[0].variantes ? Object.keys(d.previsao[0].variantes) : [];
+  const nomesV = (d.modelo.variantes_no_grafico || disp).filter(n => n !== pub && disp.includes(n));
+  const rotulos = [];
   nomesV.forEach((n, k) => {
     const pts = (ultimoObs ? [{ t: ultimoObs.t, v: ultimoObs.v }] : []).concat(d.previsao.map(p => ({ t: new Date(p.t), v: p.variantes[n] })));
-    s += `<path d="${pts.map((p, i) => `${i ? "L" : "M"}${X(+p.t).toFixed(1)} ${Y(p.v).toFixed(1)}`).join("")}" fill="none" stroke="var(--tinta-3)" stroke-width="1.2" stroke-dasharray="${k ? "1 3" : "3 3"}"><title>variante em teste: ${esc(n)}</title></path>`;
+    s += `<path d="${pts.map((p, i) => `${i ? "L" : "M"}${X(+p.t).toFixed(1)} ${Y(p.v).toFixed(1)}`).join("")}" fill="none" stroke="var(--tinta-3)" stroke-width="1.2" stroke-dasharray="${["3 3", "1 3", "7 3"][k % 3]}"><title>variante em teste: ${esc(n)}</title></path>`;
     const ult = pts[pts.length - 1];
-    s += `<text x="${X(+ult.t) - 4}" y="${Math.max(mT + 22, Y(ult.v) - 5 - k * 11)}" text-anchor="end" style="fill:var(--tinta-3);font-size:10px">${esc(n)}</text>`;
+    rotulos.push({ n, x: X(+ult.t) - 4, y: Y(ult.v) - 5 });
   });
+  // rótulos no fim das linhas, afastados para não se sobreporem
+  rotulos.sort((a, b) => a.y - b.y);
+  rotulos.forEach((r, i) => { if (i && r.y - rotulos[i - 1].y < 11) r.y = rotulos[i - 1].y + 11; r.y = Math.max(mT + 22, r.y); });
+  rotulos.forEach(r => { s += `<text x="${r.x}" y="${r.y}" text-anchor="end" style="fill:var(--tinta-3);font-size:10px">${esc(r.n)}</text>`; });
   // agora
   s += `<line x1="${X(+h0)}" x2="${X(+h0)}" y1="${mT}" y2="${H - mB}" stroke="var(--acento)" stroke-width="1.5"/>`;
   s += `<text x="${X(+h0) - 6}" y="${mT + 10}" text-anchor="end">observado</text><text x="${X(+h0) + 6}" y="${mT + 10}">previsto</text>`;
@@ -352,7 +366,7 @@ function desenharGrafico(el, d, h0) {
 
 /* Mapa: buffers coloridos pela classe em cada estação, NAMA como centro, anéis e focos do entorno */
 function montarMapa(d, focos, limites) {
-  const mapa = L.map("mapa", { zoomControl: true, minZoom: 6 });
+  const mapa = L.map("mapa", { zoomControl: true, minZoom: 5 });
   const ruas = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18, attribution: "© OpenStreetMap" }).addTo(mapa);
   const img = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 18, attribution: "Imagem © Esri" });
 
@@ -422,6 +436,14 @@ function montarMapa(d, focos, limites) {
 
   // setor de onde vem a fumaça no horizonte escolhido
   const gSetor = L.layerGroup().addTo(mapa);
+  // retrotrajetória: caminho do ar que chega agora à NAMA (vento a 925 hPa)
+  const gTraj = L.layerGroup();
+  const traj = d.modelo.regional?.trajetoria || [];
+  if (traj.length > 1) {
+    L.polyline(traj.map(p => [p[0], p[1]]), { color: "#f2b35e", weight: 2.5, opacity: .9, interactive: false }).addTo(gTraj);
+    traj.filter(p => p[2] > 0 && p[2] % 12 === 0).forEach(p =>
+      L.marker([p[0], p[1]], { interactive: false, icon: L.divIcon({ className: "rotulo-anel", html: `<span>há ${p[2]} h</span>`, iconSize: null }) }).addTo(gTraj));
+  }
   function destino(lat, lon, rumo, km) {
     const R = 6371, d_ = km / R, b = rumo * Math.PI / 180, p1 = lat * Math.PI / 180, l1 = lon * Math.PI / 180;
     const p2 = Math.asin(Math.sin(p1) * Math.cos(d_) + Math.cos(p1) * Math.sin(d_) * Math.cos(b));
@@ -492,6 +514,7 @@ function montarMapa(d, focos, limites) {
       <div class="linha"><i style="background:transparent;border:2px dashed var(--chuva)"></i>sinal de chuva na última hora</div>
       <div class="linha"><i style="background:var(--tinta);border-radius:2px;width:22px;height:10px"></i>aeroporto (boletim METAR)</div>
       <div class="linha"><i style="background:#7fd3dc;opacity:.6;border-radius:2px"></i>setor de onde vem a fumaça</div>
+      ${traj.length > 1 ? `<div class="linha"><i style="background:#f2b35e;height:3px;border-radius:2px"></i>caminho do ar que chega agora (60 h, vento a 925 hPa)</div>` : ""}
       <div class="linha">foco apagado = fora do vento no horizonte escolhido</div>
       <div class="linha">— — anéis de 50, 150 e 300 km da NAMA</div></details>`;
     L.DomEvent.disableClickPropagation(div);
@@ -504,12 +527,16 @@ function montarMapa(d, focos, limites) {
     if (lim.length > 1) mapa.fitBounds(L.latLngBounds(lim).pad(0.12)); else mapa.setView([nama.lat, nama.lon], 11);
     if (mapa.hasLayer(img)) { mapa.removeLayer(img); ruas.addTo(mapa); }
     if (mapa.hasLayer(gSetor)) mapa.removeLayer(gSetor);
+    if (mapa.hasLayer(gTraj)) mapa.removeLayer(gTraj);
     bCid.setAttribute("aria-pressed", "true"); bReg.setAttribute("aria-pressed", "false");
   };
   const verRegiao = () => {
-    mapa.fitBounds(L.latLng(nama.lat, nama.lon).toBounds(330000));
+    const b = L.latLng(nama.lat, nama.lon).toBounds(330000);
+    traj.filter(p => p[2] <= 24).forEach(p => b.extend([p[0], p[1]]));
+    mapa.fitBounds(b);
     if (mapa.hasLayer(ruas)) { mapa.removeLayer(ruas); img.addTo(mapa); }
     if (!mapa.hasLayer(gSetor)) gSetor.addTo(mapa);
+    if (!mapa.hasLayer(gTraj)) gTraj.addTo(mapa);
     bCid.setAttribute("aria-pressed", "false"); bReg.setAttribute("aria-pressed", "true");
   };
   bCid.addEventListener("click", verCidade); bReg.addEventListener("click", verRegiao);
