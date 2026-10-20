@@ -327,38 +327,43 @@ def _rumo(lat1, lon1, lat2, lon2):
 
 # ================================================================ vento a 925 hPa na região
 class Campo:
-    """Vento a 925 hPa e chuva numa grade de pontos, hora a hora."""
+    """Vento a 925 hPa (~800 m) e a 850 hPa (~1.500 m) e chuva numa grade de pontos, hora a hora."""
 
-    def __init__(self, pontos):
-        self.pontos = pontos      # [(lat, lon, {t: (u, v, mm)})]
+    NIVEIS = ("925", "850")
+
+    def __init__(self, pontos, pontos850=None):
+        self.niveis = {"925": pontos, "850": pontos850 or []}   # [(lat, lon, {t: (u, v, mm)})]
+        self.pontos = pontos
 
     @classmethod
     def coletar(cls, http_json):
         lats = [la for la in C.REG_GRADE_LAT for _ in C.REG_GRADE_LON]
         lons = [lo for _ in C.REG_GRADE_LAT for lo in C.REG_GRADE_LON]
         q = {"latitude": ",".join(str(x) for x in lats), "longitude": ",".join(str(x) for x in lons),
-             "hourly": "wind_speed_925hPa,wind_direction_925hPa,precipitation", "wind_speed_unit": "ms",
-             "timezone": "GMT", "timeformat": "unixtime", "past_days": 3, "forecast_days": 2}
+             "hourly": "wind_speed_925hPa,wind_direction_925hPa,wind_speed_850hPa,wind_direction_850hPa,precipitation",
+             "wind_speed_unit": "ms", "timezone": "GMT", "timeformat": "unixtime", "past_days": 3, "forecast_days": 2}
         d = http_json("https://api.open-meteo.com/v1/forecast?" + urllib.parse.urlencode(q))
         if isinstance(d, dict):
             d = [d]
-        pontos = []
+        por = {"925": [], "850": []}
         for la, lo, p in zip(lats, lons, d):
             h = p["hourly"]
-            s = {}
-            for ts, vel, dire, mm in zip(h["time"], h["wind_speed_925hPa"], h["wind_direction_925hPa"], h["precipitation"]):
-                if vel is None or dire is None:
-                    continue
-                r = math.radians(dire)
-                s[datetime.fromtimestamp(ts, UTC)] = (-vel * math.sin(r), -vel * math.cos(r), mm or 0.0)
-            pontos.append((la, lo, s))
-        return cls(pontos)
+            for nv in ("925", "850"):
+                vs, ds = h.get(f"wind_speed_{nv}hPa") or [], h.get(f"wind_direction_{nv}hPa") or []
+                s_ = {}
+                for ts, vel, dire, mm in zip(h["time"], vs, ds, h["precipitation"]):
+                    if vel is None or dire is None:
+                        continue
+                    r = math.radians(dire)
+                    s_[datetime.fromtimestamp(ts, UTC)] = (-vel * math.sin(r), -vel * math.cos(r), mm or 0.0)
+                por[nv].append((la, lo, s_))
+        return cls(por["925"], por["850"])
 
-    def em(self, lat, lon, t):
+    def em(self, lat, lon, t, nivel="925"):
         """Vento (u, v) em m/s e chuva em mm no ponto e hora, por inverso do quadrado da distância."""
         su = sv = sm = sw = 0.0
-        for la, lo, s in self.pontos:
-            x = s.get(t)
+        for la, lo, s_ in self.niveis.get(nivel) or self.pontos:
+            x = s_.get(t)
             if x is None:
                 continue
             d2 = (la - lat) ** 2 + ((lo - lon) * math.cos(math.radians(lat))) ** 2
@@ -367,20 +372,20 @@ class Campo:
         return None if sw == 0 else (su / sw, sv / sw, sm / sw)
 
 
-def trajetoria(campo, t_chegada, lat0, lon0, horas=None):
+def trajetoria(campo, t_chegada, lat0, lon0, horas=None, nivel="925"):
     """Retrotrajetória: [(k, tempo, lat, lon, chuva_mm)] de k = 0 (chegada) até k = horas."""
     horas = horas or C.REG_TRAJ_H
     pts = [(0, t_chegada, lat0, lon0, 0.0)]
     lat, lon, t = lat0, lon0, t_chegada
     for k in range(1, horas + 1):
-        x = campo.em(lat, lon, t)
+        x = campo.em(lat, lon, t, nivel)
         if x is None:
             break
         u, v, mm = x
         # meio passo (ponto médio) para curvas mais fiéis
         la_m = lat - v * 1800 / 111320.0
         lo_m = lon - u * 1800 / (111320.0 * math.cos(math.radians(lat)))
-        x2 = campo.em(la_m, lo_m, t - timedelta(minutes=30)) or campo.em(la_m, lo_m, t) or x
+        x2 = campo.em(la_m, lo_m, t - timedelta(minutes=30), nivel) or campo.em(la_m, lo_m, t, nivel) or x
         u, v = x2[0], x2[1]
         lat -= v * 3600 / 111320.0
         lon -= u * 3600 / (111320.0 * math.cos(math.radians(lat)))
@@ -464,7 +469,7 @@ def fator_noite(met, t):
 
 
 # ================================================================ calibração
-def calibrar_k(hist, serie, h0, pm_base):
+def calibrar_k(hist, serie, h0, pm_base, chave="ifr"):
     """K_reg por mínimos quadrados sem intercepto: anomalia ~ K x IFR x fator.
     Usa as últimas 72 h com IFR relevante; antes disso, puxa para o valor inicial."""
     pares = []
@@ -472,7 +477,9 @@ def calibrar_k(hist, serie, h0, pm_base):
         t = parse_iso(r["t"])
         if not (h0 - timedelta(hours=72) < t <= h0):
             continue
-        x = r["ifr"] * r.get("noite", 1.0)
+        if r.get(chave) is None:
+            continue
+        x = r[chave] * r.get("noite", 1.0)
         obs = serie.get(r["t"])
         if obs is None or x < C.IFR_MIN:
             continue
@@ -487,11 +494,11 @@ def calibrar_k(hist, serie, h0, pm_base):
     return est, len(pares)
 
 
-def calcular(campo, idx, agora, nama, horas_alvo):
+def calcular(campo, idx, agora, nama, horas_alvo, nivel="925"):
     """IFR por hora-alvo: {t: (ifr, por_uf)} e a trajetória que chega agora (para o mapa)."""
     out, traj0 = {}, None
     for t in horas_alvo:
-        tr = trajetoria(campo, t, nama["lat"], nama["lon"])
+        tr = trajetoria(campo, t, nama["lat"], nama["lon"], nivel=nivel)
         out[t] = ifr(tr, idx, agora)
         if t == hora_cheia(agora):
             traj0 = [[round(p[2], 3), round(p[3], 3), p[0]] for p in tr if p[0] % 3 == 0]
@@ -511,7 +518,12 @@ def preencher_historico(hist, campo, idx, agora, nama, met):
         if campo.em(nama["lat"], nama["lon"], t) is None:
             continue
         f, _ = fator_noite(met, t)
-        hist.append({"t": iso(t), "ifr": round(v, 2), "noite": round(f, 2),
+        v850 = None
+        if campo.niveis.get("850") and campo.em(nama["lat"], nama["lon"], t, "850") is not None:
+            v850 = round(ifr(trajetoria(campo, t, nama["lat"], nama["lon"], nivel="850"), idx, t)[0], 2)
+        hist.append({"t": iso(t), "ifr": round(v, 2), "ifr850": v850,
+                     "ifr_u": None if v850 is None else round(C.PESO_NIVEL_925 * v + (1 - C.PESO_NIVEL_925) * v850, 2),
+                     "noite": round(f, 2),
                      "uf": {u: round(x / v, 2) for u, x in sorted(uf.items(), key=lambda z: -z[1])[:4]} if v > 0 else {}})
     corte = iso(h0 - timedelta(hours=C.REG_GUARDA_H * 2))
     hist[:] = sorted((r for r in hist if r["t"] >= corte), key=lambda r: r["t"])

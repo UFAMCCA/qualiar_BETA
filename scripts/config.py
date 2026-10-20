@@ -47,30 +47,30 @@ SENSORES_MIN = 2                    # mínimo de sensores válidos para a median
 # Municípios em "Nome/UF"; fora do Brasil, "Nome/país".
 ATTO = {"nome": "Torre ATTO (São Sebastião do Uatumã)", "caixa": (-59.15, -2.30, -58.85, -2.00)}
 REGIOES = [
-    {"id": "manaus", "nome": "Manaus", "centro": "MIT_NAMA_UFAM", "lat": -3.0960, "lon": -59.9660,
+    {"id": "manaus", "monitorbeta": "manaus", "nome": "Manaus", "centro": "MIT_NAMA_UFAM", "lat": -3.0960, "lon": -59.9660,
      "caixa": (-60.15, -3.18, -59.83, -2.93), "entorno": [], "focos": "monitorbeta",
      "metar": ["SBEG", "SBMN"], "municipios": []},
-    {"id": "itacoatiara", "nome": "Itacoatiara", "centro": "SEMA_DCAM_36", "lat": -3.1430, "lon": -58.4440,
+    {"id": "itacoatiara", "monitorbeta": "itacoatiara", "nome": "Itacoatiara", "centro": "SEMA_DCAM_36", "lat": -3.1430, "lon": -58.4440,
      "caixa": (-58.60, -3.28, -58.30, -3.00), "entorno": [ATTO], "focos": "inpe", "metar": [],
      "municipios": ["Itacoatiara/AM", "Autazes/AM", "Nova Olinda do Norte/AM", "Silves/AM", "Urucará/AM",
                     "Barreirinha/AM", "Parintins/AM", "Urucurituba/AM", "Maués/AM", "Itapiranga/AM",
                     "São Sebastião do Uatumã/AM", "Boa Vista do Ramos/AM", "Presidente Figueiredo/AM",
                     "Rio Preto da Eva/AM"]},
-    {"id": "parintins", "nome": "Parintins", "centro": "SEMA_DCAM_47", "lat": -2.6280, "lon": -56.7360,
+    {"id": "parintins", "monitorbeta": "parintins", "nome": "Parintins", "centro": "SEMA_DCAM_47", "lat": -2.6280, "lon": -56.7360,
      "caixa": (-56.85, -2.75, -56.62, -2.53), "entorno": [ATTO], "focos": "inpe", "metar": ["SWPI"],
      "municipios": ["Parintins/AM", "Nhamundá/AM", "Oriximiná/PA", "Boa Vista do Ramos/AM", "Maués/AM",
                     "Urucurituba/AM", "Barreirinha/AM", "Urucará/AM", "Itaituba/PA", "Santarém/PA",
                     "Itapiranga/AM", "Presidente Figueiredo/AM", "Rio Preto da Eva/AM",
                     "São Sebastião do Uatumã/AM", "Itacoatiara/AM"]},
-    {"id": "humaita", "nome": "Humaitá", "centro": "SEMA_DCAM_65", "lat": -7.5060, "lon": -63.0210,
+    {"id": "humaita", "monitorbeta": "humaita", "nome": "Humaitá", "centro": "SEMA_DCAM_65", "lat": -7.5060, "lon": -63.0210,
      "caixa": (-63.18, -7.65, -62.88, -7.38), "entorno": [], "focos": "inpe", "metar": ["SWHT"],
      "municipios": ["Humaitá/AM", "Lábrea/AM", "Porto Velho/RO", "Apuí/AM", "Canutama/AM", "Cruzeiro do Sul/AC",
                     "Manicoré/AM", "Novo Aripuanã/AM", "Tapauá/AM", "Autazes/AM", "Manaquiri/AM"]},
-    {"id": "coari", "nome": "Coari", "centro": "SEMA_DCAM_27", "lat": -4.0850, "lon": -63.1410,
+    {"id": "coari", "monitorbeta": "coari", "nome": "Coari", "centro": "SEMA_DCAM_27", "lat": -4.0850, "lon": -63.1410,
      "caixa": (-63.28, -4.20, -63.00, -3.97), "entorno": [], "focos": "inpe", "metar": ["SWKO"],
      "municipios": ["Coari/AM", "Tefé/AM", "Canutama/AM", "Lábrea/AM", "Tapauá/AM", "Beruri/AM", "Anori/AM",
                     "Manacapuru/AM", "Manaus/AM", "Novo Airão/AM", "Anamã/AM", "Barcelos/AM", "Manicoré/AM"]},
-    {"id": "benjamin", "nome": "Benjamin Constant", "centro": "SEMA_DCAM_19", "lat": -4.3830, "lon": -70.0310,
+    {"id": "benjamin", "monitorbeta": "benjamin-constant", "nome": "Benjamin Constant", "centro": "SEMA_DCAM_19", "lat": -4.3830, "lon": -70.0310,
      # a caixa cobre Benjamin Constant, Tabatinga (SEMA_DCAM_57), Letícia e Atalaia do Norte
      # (SEMA_DCAM_16 e Vale do Javari): uma mediana da tríplice fronteira
      "caixa": (-70.35, -4.55, -69.85, -4.12), "entorno": [], "focos": "inpe", "metar": ["SBTT"],
@@ -260,8 +260,9 @@ TAU_CHUVA_H = 3.0             # o efeito de uma chuva prevista passa em ~3 h (n�
 #   "CAMS" = previsão de PM2,5 do CAMS (Copernicus) ajustada ao nível medido pela PurpleAir
 #   "F24N" = F24 + fator de madrugada sobre o fogo local (sem fumaça distante)
 #   "F24R" = F24 + fumaça distante (trajetória de 60 h sobre os focos do INPE) + fator de madrugada
+#   "F24U" = F24R + trajetórias em 925 e 850 hPa + ventilação + ilha de calor
 MODELO_PUBLICADO = "F24"
-VARIANTES = ("F24", "F48", "F24P", "CAMS", "F24N", "F24R", "v0.3")
+VARIANTES = ("F24", "F48", "F24P", "CAMS", "F24N", "F24R", "F24U", "v0.3")
 VARIANTES_NO_GRAFICO = ("F24R",)
 
 # Perfil horário (F24P): razão entre a mediana de cada hora e a média das 24 h
@@ -311,6 +312,36 @@ NOITE_V925_MIN, NOITE_V925_PLENO = 3.0, 8.0
 NOITE_HORAS = {3: 0.5, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 0.5, 10: 0.25}  # hora local -> peso
 RISCO_MATINAL_H = 24          # olha a próxima manhã inteira, mesmo numa rodada de 09h
 RISCO_MATINAL_UG = 75.0       # aviso no site se F24R passar disto numa manhã com fator > 1,5
+
+# ---------------------------------------------------------------- Painel do Fogo
+# Eventos do Painel do Fogo (Censipam), copiados pelo MonitorBETA: um foco dentro de
+# um evento grande ou persistente emite mais fumaça. Multiplicador do peso do foco:
+# 1 + 0,5 x log2(1 + área em km²), até 3 (evento de 3 km² = 2x; 15 km² = 3x).
+PAINEL_MULT_POR_LOG = 0.5
+PAINEL_MULT_MAX = 3.0
+PAINEL_PERSIST_INCENDIO_D = 3     # evento ativo há 3 dias ou mais = provável incêndio
+PAINEL_AREA_INCENDIO_KM2 = 5.0
+
+# ---------------------------------------------------------------- F24U (em teste desde 20/10/2026)
+# F24R + três ajustes sugeridos pelo episódio de 14 a 19/10:
+# 1) Vento em duas alturas de transporte: a fumaça de queimadas sobe a 500-2000 m.
+#    A fumaça distante é a média das trajetórias a 925 hPa (~800 m) e 850 hPa (~1.500 m).
+PESO_NIVEL_925 = 0.6
+# 2) Ventilação: coeficiente de ventilação = altura da camada de mistura x vento
+#    médio dentro dela (vetor de 10 m, 925 e, se a camada passa de 1.000 m, 850 hPa).
+#    Ventilação baixa = a fumaça que já está na cidade demora mais a sair.
+VENT_REF_M2S = 2000.0          # valor de referência (a calibrar com os dados de Manaus)
+VENT_EXPOENTE = 0.3            # tau efetivo = tau x (VENT_REF / ventilação) ^ expoente
+VENT_FATOR_MIN, VENT_FATOR_MAX = 0.6, 2.5
+# 3) Ilha de calor: à noite, a cidade fica mais quente que o entorno e forma uma
+#    cúpula de ar misturado que retém a fumaça sob a inversão. A intensidade vem dos
+#    próprios sensores PurpleAir: temperatura medida menos a do modelo (Open-Meteo),
+#    comparada com o normal daquela hora nos últimos 14 dias (a diferença fixa do
+#    aquecimento da caixa do sensor se cancela).
+ILHA_DIAS = 14
+ILHA_FATOR_POR_GRAU = 0.15     # cada 1 °C de ilha de calor acima do normal alonga tau em 15%, à noite
+ILHA_FATOR_MAX = 1.6
+ILHA_HORAS_NOITE = (19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6, 7)
 
 HORIZONTES = list(range(1, 25))
 DESTAQUES_H = [1, 3, 6, 12, 24]
