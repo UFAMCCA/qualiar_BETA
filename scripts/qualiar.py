@@ -878,7 +878,8 @@ def escolher_variantes(validacao):
         if n6 >= 24 and len(lst) == 3:
             cand.append((sum(a for a, _, _, _ in lst) / 3, sum(e for _, e, _, _ in lst) / 3, nome))
     melhor = max(cand)[2] if cand else next((n for n in C.VARIANTES_NO_SITE if n != C.MODELO_PUBLICADO), None)
-    return [C.MODELO_PUBLICADO] + ([melhor] if melhor else [])
+    lista = [C.MODELO_PUBLICADO] + ([melhor] if melhor else [])
+    return lista + [v for v in C.VARIANTES_FIXAS_NO_SITE if v not in lista]
 
 
 # ================================================================ validação

@@ -92,6 +92,9 @@ METAR_EXTRA = {
 # Variantes mostradas no site (gráfico e tabela). As outras continuam no JSON
 # e na validação, para a publicação científica.
 VARIANTES_NO_SITE = ("F24", "F24R")
+# Sempre mostradas no site, além da publicada e da melhor em teste: o CAMS
+# (Copernicus) antecipa os picos de fumaça regional, mesmo errando o valor.
+VARIANTES_FIXAS_NO_SITE = ("CAMS",)
 
 # ---------------------------------------------------------------- classes
 # Cinco classes do IQAr (Resolução CONAMA 506/2024 e guia do MMA), PM2,5 em
