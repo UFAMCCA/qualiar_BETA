@@ -60,6 +60,7 @@
     <section class="bloco" aria-labelledby="t-met">
       <h2 id="t-met">Tempo · agora e próximas 24 h</h2>
       <div class="met-grade" id="met-grade"></div>
+      <div class="vento-perfil" id="vento-perfil"></div>
       <div class="chuva-obs" id="chuva-obs"></div>
       <dl class="ficha" id="met-ficha"></dl>
     </section>
@@ -90,7 +91,7 @@
       <p class="nota" id="val-chuva" hidden></p>
       <h3 class="rotulo" id="t-variantes" hidden>Teste das variantes do modelo</h3>
       <div class="tabela-rolagem" id="val-variantes" hidden></div>
-      <p class="nota">Em cada célula: erro médio em µg/m³ e porcentagem de classe certa. O site mostra as duas versões com melhor desempenho: F24 (publicada), que parte do nível de fundo regional das últimas 24 h e soma o fogo a barlavento dos municípios do entorno, e F24R, que acrescenta a fumaça de focos distantes do INPE, seguida por retrotrajetória de 60 h no vento a 925 hPa, e o reforço da descida da fumaça no começo da manhã. No mapa, a linha laranja mostra o caminho do ar que chega agora. As demais versões testadas continuam calculadas e registradas para a avaliação científica. ★ = versão publicada; em negrito, a de menor erro em cada horizonte.</p>
+      <p class="nota">Em cada célula: erro médio em µg/m³ e porcentagem de classe certa. O site mostra a versão publicada, F24 (nível de fundo regional das últimas 24 h mais o fogo a barlavento dos municípios do entorno), e a versão em teste com maior acerto de classe nas previsões de 6 a 24 h, escolhida automaticamente. Entre as versões em teste: F24R acrescenta a fumaça de focos distantes do INPE, seguida por retrotrajetória de 60 h no vento a 925 hPa, e o reforço da descida da fumaça no começo da manhã; F24U, em teste desde 20/10/2026, segue a fumaça distante em duas alturas (~800 m e ~1.500 m) e faz a fumaça que já está na cidade demorar mais a sair quando a ventilação é fraca ou a ilha de calor noturna está mais forte que o normal. No mapa, a linha laranja mostra o caminho do ar que chega agora. As demais versões testadas continuam calculadas e registradas para a avaliação científica. ★ = versão publicada; em negrito, a de menor erro em cada horizonte.</p>
       <p class="nota">Cada previsão emitida fica registrada e é comparada com a mediana dos próprios sensores PurpleAir quando a hora chega. "Persistência" é o erro de repetir o valor do momento da previsão: o modelo só ajuda onde erra menos que ela.</p>
     </section>
 

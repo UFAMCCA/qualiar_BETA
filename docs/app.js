@@ -111,6 +111,7 @@ const REGIOES_PADRAO = [
     return `<div class="met"><div class="cab"><small>${ehChuva ? "Chuva prevista agora" : v.nome + " agora"}</small><b>${num(ma[v.campo], v.casas)}<small> ${v.un}</small></b>${extra}</div>${spark(mp, v)}</div>`;
   }).join("");
   document.getElementById("met-grade").innerHTML = metHTML;
+  desenharPerfilVento(document.getElementById("vento-perfil"), d);
   const chuva24 = mp.slice(1).reduce((s, l) => s + (l.chuva || 0), 0);
   const probMax = Math.max(0, ...mp.slice(1).map(l => l.prob || 0));
   desenharChuvaObs(d, h0);
@@ -173,7 +174,9 @@ const REGIOES_PADRAO = [
     <dt>Fogo a barlavento</dt><dd><b>${num(mo.ifb_agora, 1)}</b> agora · ${an.map((a, i) => `${a[0]}–${a[1]} km: ${num(mo.ifb_aneis?.[i], 1)}`).join(" · ")}</dd>
     <dt>Peso do fogo</dt><dd>${num(mo.k_usado, 2)} µg/m³ por unidade (calibrado na hora)</dd>
     <dt>Vento de transporte</dt><dd>${mo.tem_925 ? `média vetorial: ${Math.round((1 - mo.parametros.peso_925) * 100)}% do vento a 10 m e ${Math.round(mo.parametros.peso_925 * 100)}% a 925 hPa (~800 m)` : "só vento a 10 m (925 hPa indisponível nesta rodada)"}</dd>
-    <dt>Camada de mistura</dt><dd>fator ${num(mo.fator_diurno_agora, 2)} agora</dd>
+    <dt>Camada de mistura</dt><dd>fator ${num(mo.fator_diurno_agora, 2)} agora${mo.ventilacao_agora != null ? ` · ventilação ${num(mo.ventilacao_agora, 0)} m²/s (${esc(mo.ventilacao_classe)})` : ""}</dd>
+    ${mo.ilha_calor && mo.ilha_calor.anomalia_c != null ? `<dt>Ilha de calor</dt><dd>${mo.ilha_calor.anomalia_c >= 0 ? "+" : ""}${num(mo.ilha_calor.anomalia_c, 1)} °C em relação ao normal da hora (${mo.ilha_calor.dias} dias de referência)</dd>` : ""}
+    ${ff.painel_fogo ? `<dt>Painel do Fogo</dt><dd>eventos do Censipam de ${horaLocal(ff.painel_fogo)}: área e persistência aumentam o peso dos focos</dd>` : ""}
     <dt>Centro</dt><dd>${esc(d.nama.nome)} · ${num(d.nama.lat, 4)}, ${num(d.nama.lon, 4)}</dd>`;
   document.querySelector("#tab-val tbody").innerHTML = d.validacao.map(v => v.n ? `<tr>
       <td>+${v.h} h</td><td class="n">${v.n}</td><td class="n">${num(v.mae, 1)}</td><td class="n">${num(v.mae_persistencia, 1)}</td>
@@ -263,6 +266,38 @@ function desenharChuvaObs(d, h0) {
     `<div class="chuva-faixa"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Chuva prevista e observada nas últimas 24 horas e prevista nas próximas 24">${g}</svg></div>` +
     `<p class="nota">Barras cinza: chuva prevista pelo modelo (no passado, a previsão feita uma hora antes). Azul: chuva registrada; contorno escuro = não prevista. Registro horário começa com a coleta.</p>` +
     (metar ? `<dl class="metar-lista">${metar}</dl>` : "");
+}
+
+/* Vento em três alturas (agora, +6 h, +12 h), ventilação e ilha de calor */
+function desenharPerfilVento(el, d) {
+  if (!el) return;
+  const pv = d.modelo.perfil_vento || [];
+  if (!pv.length) { el.innerHTML = ""; return; }
+  const niveis = [
+    { rot: "~1.500 m", sub: "850 hPa", v: "v850", d: "d850" },
+    { rot: "~800 m", sub: "925 hPa", v: "v925", d: "d925" },
+    { rot: "10 m", sub: "superfície", v: "vento", d: "dir" },
+  ];
+  const seta = (vel, dir) => {
+    if (vel == null || dir == null) return `<span class="nota">—</span>`;
+    const comp = 10 + Math.min(14, vel * 1.4);
+    return `<svg width="34" height="34" viewBox="-17 -17 34 34" aria-hidden="true"><circle r="15" fill="none" stroke="var(--linha)"/>` +
+      `<g transform="rotate(${(dir + 180) % 360})"><line x1="0" y1="${comp / 2}" x2="0" y2="${-comp / 2 + 4}" stroke="var(--acento)" stroke-width="2.4"/>` +
+      `<path d="M0 ${-comp / 2} L4.5 ${-comp / 2 + 6} L-4.5 ${-comp / 2 + 6} Z" fill="var(--acento)"/></g></svg>` +
+      `<span><b>${num(vel, 1)}</b> m/s<br><small>de ${cardeal(dir)}</small></span>`;
+  };
+  const cab = pv.map((p, i) => `<th>${i === 0 ? "agora" : "+" + (i * 6) + " h"} <small class="nota">${hh(p.t)}</small></th>`).join("");
+  const linhas = niveis.map(n => `<tr><th scope="row">${n.rot}<br><small class="nota">${n.sub}</small></th>` +
+    pv.map(p => `<td><span class="seta-vento">${seta(p[n.v], p[n.d])}</span></td>`).join("") + `</tr>`).join("");
+  const mx = pv.map(p => `<td class="n">${p.blh == null ? "—" : num(p.blh, 0) + " m"}</td>`).join("");
+  const mo = d.modelo, il = mo.ilha_calor;
+  const vc = mo.ventilacao_agora;
+  el.innerHTML = `<h3 class="rotulo">Vento em três alturas</h3>
+    <div class="tabela-rolagem"><table class="tabela-s perfil"><thead><tr><th></th>${cab}</tr></thead><tbody>${linhas}
+    <tr><th scope="row">camada de mistura</th>${mx}</tr></tbody></table></div>
+    <p class="nota">A fumaça de queimadas viaja sobretudo entre 500 e 2.000 m, onde o vento costuma ser mais forte e às vezes vem de outra direção que o da superfície. A fumaça distante é calculada seguindo o vento a ~800 m e, na versão em teste F24U, também a ~1.500 m.` +
+    (vc != null ? ` <b>Ventilação agora: ${num(vc, 0)} m²/s (${esc(mo.ventilacao_classe)})</b>, a altura da camada de mistura vezes o vento médio dentro dela; abaixo de ~2.000 m²/s a fumaça que já está na cidade demora a sair.` : "") +
+    (il && il.anomalia_c != null ? ` <b>Ilha de calor:</b> os sensores estão ${num(Math.abs(il.anomalia_c), 1)} °C ${il.anomalia_c >= 0 ? "acima" : "abaixo"} do normal desta hora em relação ao modelo; à noite, uma ilha de calor mais forte forma uma cúpula que retém a fumaça sobre a cidade.` : "") + `</p>`;
 }
 
 /* Sparkline das próximas 24 h */
@@ -511,6 +546,8 @@ function montarMapa(d, focos, limites) {
       <dt>Última detecção</dt><dd>${horaLocal(p.ultima_deteccao)}</dd>
       <dt>Duração</dt><dd>${num(p.duracao_h, 0, " h")}</dd>
       <dt>Pixels · FRP máx.</dt><dd>${num(p.n_pixels, 0)} · ${num(p.frp_max, 0, " MW")}</dd>
+      ${p.painel_fogo ? `<dt>Painel do Fogo</dt><dd>evento ${esc(p.painel_fogo.id_evento)}: ${num(p.painel_fogo.area_km2, 1, " km²")}, ativo há ${num(p.painel_fogo.persistencia_dias, 0)} dia(s), ${num(p.painel_fogo.deteccoes, 0)} detecções · peso ×${num(p.mult_painel, 1)}</dd>` : ""}
+      ${p.goes_painel ? `<dt>Alerta GOES</dt><dd>${num(p.goes_painel.potencia_mw, 0)} MW até ${horaLocal(p.goes_painel.ate)}</dd>` : ""}
       <dt>Peso no índice</dt><dd>${Object.keys(p.influencia || {}).length ? Object.entries(p.influencia).map(([h, c]) => `${h === "0" ? "agora" : "+" + h + " h"}: ${num(c, 2)}`).join(" · ") : "fora do vento em todos os horizontes"}</dd></dl></div>`);
     m.addTo(gFocos);
     marcadoresFoco.push([m, p]);
