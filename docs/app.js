@@ -76,10 +76,16 @@ const REGIOES_PADRAO = [
     : "";
   const rm = d.modelo.risco_matinal;
   const notaMatinal = rm
-    ? `<b>Risco de fumaça matinal</b>: a variante em teste F24R, que soma a fumaça de focos distantes e a descida da fumaça no começo da manhã, indica ${num(rm.pm, 0)} µg/m³ às ${hh(rm.t)}${Object.keys(rm.origem || {}).length ? ` (origem provável: ${Object.entries(rm.origem).map(([u, f]) => `${esc(u)} ${Math.round(f * 100)}%`).join(", ")})` : ""}. A previsão publicada ainda é a F24. `
+    ? `<b>Risco de fumaça matinal</b>: a variante em teste F24R, que soma a fumaça de focos distantes e a descida da fumaça no começo da manhã, indica ${num(rm.pm, 0)} µg/m³ às ${hh(rm.t)}${Object.keys(rm.origem || {}).length ? ` (origem provável: ${Object.entries(rm.origem).map(([u, f]) => `${esc(u)} ${Math.round(f * 100)}%`).join(", ")})` : ""}. Os cartões seguem a versão publicada, ${esc(d.modelo.modelo_publicado)}. `
     : "";
+  const pubG = d.modelo.modelo_publicado;
+  const testesG = (d.modelo.variantes_no_site || []).filter(n => n !== pubG && n !== "CAMS");
+  const notaLinhas = `No gráfico, a linha preta tracejada é a previsão publicada (${esc(pubG)}), a mesma dos cartões` +
+    (testesG.length ? `; a linha cinza${testesG.length > 1 ? "s" : ""} (${testesG.map(esc).join(", ")}) ${testesG.length > 1 ? "são versões" : "é a versão"} em teste com maior acerto de classe nas previsões de 6 a 24 h, mostrada${testesG.length > 1 ? "s" : ""} só para comparação` : "") +
+    ((d.modelo.variantes_no_site || []).includes("CAMS") ? "; a linha azul é o CAMS (Copernicus) ajustado ao medido" : "") + ". ";
   document.getElementById("prev-nota").innerHTML = pior
     ? notaMatinal + notaChuva + `Pior hora prevista nas próximas 24 h: <b>${hh(pior.t)}</b>, com ${num(pior.pm, 0)} µg/m³ (${esc(classe(pior.classe).nome)}). ` +
+      notaLinhas +
       `As classes dos cartões usam o valor horário (indicativo); a classe oficial do IQAr usa a média de 24 h, mostrada abaixo do valor. Modelo ${esc(d.modelo.versao)}.`
     : "";
 
@@ -395,8 +401,10 @@ function desenharGrafico(el, d, h0) {
     const cams = n === "CAMS", cor = cams ? "#4f6fb8" : "var(--tinta-3)";
     s += `<path d="${pts.map((p, i) => `${i ? "L" : "M"}${X(+p.t).toFixed(1)} ${Y(p.v).toFixed(1)}`).join("")}" fill="none" stroke="${cor}" stroke-width="${cams ? 1.8 : 1.2}" stroke-dasharray="${cams ? "6 3" : ["3 3", "1 3", "7 3"][k % 3]}"><title>${cams ? "CAMS (Copernicus) ajustado ao medido" : "variante em teste: " + esc(n)}</title></path>`;
     const ult = pts[pts.length - 1];
-    rotulos.push({ n, x: X(+ult.t) - 4, y: Y(ult.v) - 5, cor });
+    rotulos.push({ n: cams ? n : `${n} (teste)`, x: X(+ult.t) - 4, y: Y(ult.v) - 5, cor });
   });
+  // rótulo da linha publicada, para não confundir com as variantes em teste
+  if (prv.length) { const u = prv[prv.length - 1]; rotulos.push({ n: `${pub} (publicada)`, x: X(+u.t) - 4, y: Y(u.v) - 5, cor: "var(--tinta)" }); }
   // rótulos no fim das linhas, afastados para não se sobreporem
   rotulos.sort((a, b) => a.y - b.y);
   rotulos.forEach((r, i) => { if (i && r.y - rotulos[i - 1].y < 11) r.y = rotulos[i - 1].y + 11; r.y = Math.max(mT + 22, r.y); });
