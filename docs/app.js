@@ -1,14 +1,32 @@
-/* QUALIAR-UFAM: painel de qualidade do ar observada e prevista em Manaus. */
+/* QUALIAR-UFAM: painel de qualidade do ar observada e prevista em Manaus e nas cidades com campus da UFAM. */
+const REGIOES_PADRAO = [
+  { id: "manaus", nome: "Manaus", pasta: "data/" }, { id: "itacoatiara", nome: "Itacoatiara", pasta: "data/regioes/itacoatiara/" },
+  { id: "parintins", nome: "Parintins", pasta: "data/regioes/parintins/" }, { id: "humaita", nome: "Humaitá", pasta: "data/regioes/humaita/" },
+  { id: "coari", nome: "Coari", pasta: "data/regioes/coari/" }, { id: "benjamin", nome: "Benjamin Constant", pasta: "data/regioes/benjamin/" },
+];
 (async function () {
-  let d, focos, limites = null;
+  let d, focos, limites = null, regioes = REGIOES_PADRAO;
+  try { const lst = (await carregarJSON("data/regioes.json")).regioes.filter(r => r.pasta); if (lst.length) regioes = lst; } catch (e) { /* índice ainda não existe */ }
+  const pedida = new URLSearchParams(location.search).get("r") || "manaus";
+  const reg = regioes.find(r => r.id === pedida) || regioes[0];
+  const sel = document.getElementById("sel-regiao");
+  if (sel) {
+    sel.innerHTML = regioes.map(r => `<option value="${esc(r.id)}"${r.id === reg.id ? " selected" : ""}>${esc(r.nome)}${r.classe24 ? "" : ""}</option>`).join("");
+    sel.addEventListener("change", () => { const u = new URL(location.href); u.searchParams.set("r", sel.value); location.href = u.toString(); });
+  }
+  const base = reg.pasta;
   try {
-    [d, focos] = await Promise.all([carregarJSON("data/qualiar.json"), carregarJSON("data/focos_pontos.geojson")]);
+    [d, focos] = await Promise.all([carregarJSON(base + "qualiar.json"), carregarJSON(base + "focos_pontos.geojson")]);
   } catch (e) {
-    document.getElementById("atualiz").textContent = "Não foi possível carregar os dados. Verifique se a coleta já rodou pelo menos uma vez.";
+    document.getElementById("atualiz").textContent = `Ainda não há dados de ${reg.nome}. A primeira coleta desta cidade aparece aqui na próxima hora.`;
     console.error(e); return;
   }
-  try { limites = await carregarJSON("data/limites.geojson"); } catch (e) { limites = null; }
+  try { limites = await carregarJSON(base + "limites.geojson"); } catch (e) { limites = null; }
   CLASSES = d.classes;
+  const cidade = (d.regiao && d.regiao.nome) || reg.nome, centro = d.nama.nome;
+  document.querySelectorAll("[data-cidade]").forEach(el => { el.textContent = el.dataset.cidade.replace("{cidade}", cidade); });
+  document.title = `QUALIAR-UFAM · Qualidade do ar em ${cidade}`;
+  window.__centro = centro; window.__cidade = cidade;
   const h0 = new Date(d.hora_base);
   const at = d.atual;
 
@@ -18,9 +36,9 @@
     `<span>Atualizado em <b>${horaLocal(d.gerado_em)}</b> · a cada hora</span>` +
     Object.entries(st).map(([f, s]) => `<span class="chip ${/^ok/.test(s) ? "ok" : (/^erro|^sem /.test(s) ? "erro" : "")}" title="${esc(s)}">${esc(f)}</span>`).join("");
   const avisos = [];
-  if (d.dados_de_teste) avisos.push("Demonstração: PM2,5 e meteorologia são sintéticos; os focos são uma cópia real do MonitorBETA. Nada aqui deve ser usado para decisão.");
+  if (d.dados_de_teste) avisos.push("Demonstração: PM2,5 e meteorologia são sintéticos. Nada aqui deve ser usado para decisão.");
   for (const [f, s] of Object.entries(st)) if (/^erro|^sem /.test(s)) avisos.push(`${f}: ${s}`);
-  if (d.nama && /padrão/.test(d.nama.origem || "")) avisos.push(`Estação ${d.nama.nome} não encontrada na PurpleAir: o centro do método usa coordenadas aproximadas do campus da UFAM.`);
+  if (d.nama && /padrão|aproximadas/.test(d.nama.origem || "")) avisos.push(`Estação ${d.nama.nome} não encontrada na PurpleAir: o centro do método usa coordenadas aproximadas de ${cidade}.`);
   else if (d.nama && /última posição/.test(d.nama.origem || "")) avisos.push(`A estação ${d.nama.nome} não enviou dados nesta hora: o centro do método usa a última posição conhecida.`);
   if (avisos.length) { const av = document.getElementById("aviso"); av.textContent = avisos.join(" · "); av.hidden = false; }
 
@@ -34,7 +52,8 @@
     `Mediana de <b>${at.n_sensores}</b> de ${at.n_total} estações às ${hh(d.hora_base)}.<br>` +
     `Tendência: <b>${seta} ${at.tendencia}</b> (${num(at.tendencia_h, 1)} µg/m³ por hora, últimas 3 h).<br>` +
     `Média das últimas 24 h: <b>${num(at.media24, 0)} µg/m³</b> ${at.classe24 ? "· " + esc(classe(at.classe24).nome) : ""}` +
-    (at.horas_media24 < 24 ? ` <span title="horas com dado">(${at.horas_media24} h)</span>` : "") + ".";
+    (at.horas_media24 < 24 ? ` <span title="horas com dado">(${at.horas_media24} h)</span>` : "") +
+    (at.iqar24 != null ? ` · <b>IQAr ${at.iqar24 > 400 ? "acima de 400" : num(at.iqar24, 0)}</b>` : "") + ".";
 
   /* ---------- cartões de previsão ---------- */
   document.getElementById("prev-cartoes").innerHTML = d.destaques.length ? d.destaques.map(p => {
@@ -46,7 +65,7 @@
         <span class="val">${num(p.pm, 0)}<small>µg/m³</small></span>
         <span class="linha">provável entre ${num(p.lo, 0)} e ${num(p.hi, 0)}</span>
         <span class="linha">chance desta classe: <b>${pc}%</b></span>
-        <span class="linha">média 24 h: <b>${num(p.media24, 0)}</b> · ${esc(classe(p.classe24).nome)}</span>
+        <span class="linha">média 24 h: <b>${num(p.media24, 0)}</b> · ${esc(classe(p.classe24).nome)}${p.iqar24 != null ? ` · IQAr ${p.iqar24 > 400 ? "&gt;400" : num(p.iqar24, 0)}` : ""}</span>
         <span class="linha fogo">${fogoLinha(p)}</span>
       </div></article>`;
   }).join("") : `<p class="nota">Sem previsão: faltam dados de PM2,5 das estações nesta hora.</p>`;
@@ -68,9 +87,9 @@
   desenharGrafico(document.getElementById("grafico-prev"), d, h0);
 
   /* ---------- estações ---------- */
-  const sens = [...d.sensores].sort((a, b) => (b.nama - a.nama) || (b.valido - a.valido) || ((b.pm ?? -1) - (a.pm ?? -1)));
+  const sens = [...d.sensores].sort((a, b) => (b.nama - a.nama) || (!!a.entorno - !!b.entorno) || (b.valido - a.valido) || ((b.pm ?? -1) - (a.pm ?? -1)));
   document.querySelector("#tab-sensores tbody").innerHTML = sens.map(s => `<tr class="${s.valido ? "" : "inval"} ${s.nama ? "nama" : ""}">
-      <td>${esc(s.nome)}${s.nama ? " ★" : ""}${s.sinal_chuva ? `<span class="gota" title="sinal de chuva na última hora (${s.sinal_chuva.nivel === "provavel" ? "provável" : "possível"})"></span>` : ""}</td>
+      <td>${esc(s.nome)}${s.nama ? " ★" : ""}${s.entorno ? ` <span class="nota" title="${esc(s.entorno)}">(entorno)</span>` : ""}${s.sinal_chuva ? `<span class="gota" title="sinal de chuva na última hora (${s.sinal_chuva.nivel === "provavel" ? "provável" : "possível"})"></span>` : ""}</td>
       <td class="n">${s.valido ? num(s.pm, 0) : "—"}</td>
       <td>${s.valido ? seloClasse(s.classe) : `<span class="nota" title="${esc(s.motivo)}">descartado</span>`}</td>
       <td class="n">${num(s.dist_nama_km, 1, " km")}</td></tr>`).join("");
@@ -136,9 +155,11 @@
   }
   hSel.addEventListener("click", ev => { const bt = ev.target.closest("button"); if (bt) desenharMunis(+bt.dataset.i); });
   window.__desenharMunis = () => desenharMunis(0);
+  const ff = d.focos.fonte || { nome: "MonitorBETA", url: "https://ufamcca.github.io/MonitorBETA/", gerado_em: d.focos.monitorbeta_gerado_em };
   document.getElementById("fogo-nota").innerHTML =
-    `Focos do <a href="https://ufamcca.github.io/MonitorBETA/" target="_blank" rel="noopener">MonitorBETA</a>, atualizados em ${horaLocal(d.focos.monitorbeta_gerado_em)}. ` +
-    `Distâncias medidas a partir da estação NAMA (UFAM). <b>Peso na fumaça</b>: fração do índice de fogo a barlavento que vem de cada município no horizonte escolhido; depende do vento no trajeto, da distância, do tempo de viagem da fumaça e de o foco estar queimando quando ela partiu. <b>Provável incêndio</b>: foco ativo há ${cr.incendio_duracao_h} h ou mais, com ${cr.incendio_pixels} pixels ou mais, ou com potência radiativa de ${cr.incendio_frp_mw} MW ou mais.`;
+    `Focos do <a href="${esc(ff.url)}" target="_blank" rel="noopener">${esc(ff.nome)}</a>, atualizados em ${horaLocal(ff.gerado_em)}` +
+    (ff.nome === "MonitorBETA" ? "" : " (cada quadrado de 0,25° com detecção de satélite nas últimas 48 h conta como um foco; ativo = detectado nas últimas 3 h)") + `. ` +
+    `Distâncias medidas a partir da estação ${esc(centro)}. <b>Peso na fumaça</b>: fração do índice de fogo a barlavento que vem de cada município no horizonte escolhido; depende do vento no trajeto, da distância, do tempo de viagem da fumaça e de o foco estar queimando quando ela partiu. <b>Provável incêndio</b>: foco ativo há ${cr.incendio_duracao_h} h ou mais, com ${cr.incendio_pixels} pixels ou mais, ou com potência radiativa de ${cr.incendio_frp_mw} MW ou mais.`;
 
   /* ---------- método e validação ---------- */
   const mo = d.modelo, an = d.focos.aneis_km;
@@ -160,7 +181,8 @@
   const comp = d.validacao.filter(v => v.variantes);
   const elv = document.getElementById("val-variantes");
   if (comp.length && elv) {
-    const nomes = Object.keys(comp[0].variantes);
+    const noSite = d.modelo.variantes_no_site || Object.keys(comp[0].variantes);
+    const nomes = Object.keys(comp[0].variantes).filter(n => noSite.includes(n));
     const pub = d.modelo.modelo_publicado;
     elv.innerHTML = `<table class="tabela-s"><thead><tr><th>Horizonte</th>${nomes.map(n => `<th class="n">${esc(n)}${n === pub ? " ★" : ""}</th>`).join("")}</tr></thead><tbody>` +
       comp.map(v => `<tr><td>+${v.h} h <span class="nota">(${v.variantes[nomes[0]].n})</span></td>${nomes.map(n => {
@@ -181,7 +203,8 @@
   /* ---------- classes ---------- */
   document.getElementById("classes-lista").innerHTML = CLASSES.map((c, i) => {
     const de = i ? CLASSES[i - 1].ate : 0;
-    return `<div class="classe-linha"><span>${seloClasse(c.id)}<br><small class="nota">${c.ate == null ? `acima de ${de}` : `${i ? "acima de " + de + " até " : "até "}${c.ate}`} µg/m³</small></span><span>${esc(c.msg)}</span></div>`;
+    const faixa = c.ate == null ? `acima de ${de}` : `${i ? "acima de " + de + " até " : "0 a "}${c.ate}`;
+    return `<div class="classe-linha"><span>${seloClasse(c.id)}<br><small class="nota">${faixa} µg/m³ · IQAr ${c.iqar ? c.iqar[0] + "–" + c.iqar[1] : ""}</small></span><span>${esc(c.msg)}</span></div>`;
   }).join("");
 
   /* ---------- mapa ---------- */
@@ -278,23 +301,29 @@ function desenharGrafico(el, d, h0) {
   if (!obs.length && !prv.length) { el.innerHTML = ""; return; }
   const W = Math.max(320, Math.round(el.clientWidth || 900)), estreito = W < 600, H = estreito ? 200 : 230, mL = 30, mR = estreito ? 84 : 120, mT = 10, mB = 24;
   const t0 = +h0 - 24 * 3.6e6, t1 = +h0 + 24 * 3.6e6;
-  const ymax = Math.max(80, ...obs.map(o => o.v), ...prv.map(p => p.hi)) * 1.08;
+  // escala logarítmica: 5 µg/m³ no pé, topo pelo maior valor (no mínimo a classe Péssima)
+  const vSite = (d.modelo.variantes_no_site || []).filter(n => n !== d.modelo.modelo_publicado);
+  const ymin = 5, ymax = Math.max(200, ...obs.map(o => o.v), ...prv.map(p => p.hi),
+    ...prv.flatMap(p => vSite.map(n => (p.var || {})[n] || 0))) * 1.15;
   const X = t => mL + (t - t0) / (t1 - t0) * (W - mL - mR);
-  const Y = v => mT + (1 - Math.min(v, ymax) / ymax) * (H - mT - mB);
+  const lg = v => Math.log(Math.max(ymin, Math.min(v, ymax)));
+  const Y = v => mT + (1 - (lg(v) - Math.log(ymin)) / (Math.log(ymax) - Math.log(ymin))) * (H - mT - mB);
   let s = "";
   // faixas de classe (tinta clara) com nome à direita
-  let ant = 0;
+  let ant = ymin;
   CLASSES.forEach(c => {
     const topo = c.ate == null ? ymax : Math.min(c.ate, ymax);
     if (ant >= ymax) return;
     s += `<rect x="${mL}" y="${Y(topo)}" width="${W - mL - mR}" height="${Y(ant) - Y(topo)}" fill="${c.cor}" opacity=".13"/>`;
     s += `<rect x="${W - mR + 6}" y="${Y(topo) + 1}" width="4" height="${Math.max(2, Y(ant) - Y(topo) - 2)}" rx="2" fill="${c.cor}"/>`;
-    s += `<text x="${W - mR + 14}" y="${(Y(topo) + Y(ant)) / 2 + 4}">${esc(estreito ? c.nome.replace("Muito Ruim/Péssima", "M. Ruim/Péss.") : c.nome)}</text>`;
+    if (Y(ant) - Y(topo) >= 9) s += `<text x="${W - mR + 14}" y="${(Y(topo) + Y(ant)) / 2 + 4}">${esc(estreito ? c.nome.replace("Muito Ruim", "M. Ruim") : c.nome)}</text>`;
     ant = topo;
   });
   // grade horizontal nos limites
   CLASSES.slice(0, -1).forEach(c => { if (c.ate < ymax) s += `<line x1="${mL}" x2="${W - mR}" y1="${Y(c.ate)}" y2="${Y(c.ate)}" stroke="var(--linha)"/><text x="${mL - 5}" y="${Y(c.ate) + 4}" text-anchor="end">${c.ate}</text>`; });
-  s += `<text x="${mL - 5}" y="${Y(0) + 4}" text-anchor="end">0</text>`;
+  [300, 500, 1000].filter(v => v < ymax * 0.9).forEach(v => { s += `<line x1="${mL}" x2="${W - mR}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--linha)" stroke-dasharray="2 4"/><text x="${mL - 5}" y="${Y(v) + 4}" text-anchor="end">${v}</text>`; });
+  s += `<text x="${mL - 5}" y="${Y(ymin) + 4}" text-anchor="end">${ymin}</text>`;
+  s += `<text x="${mL + 4}" y="${mT + 10}" style="fill:var(--tinta-3);font-size:10px">escala logarítmica</text>`;
   // eixo de tempo a cada 6 h
   for (let t = t0; t <= t1; t += (estreito ? 12 : 6) * 3.6e6) {
     s += `<text x="${X(t)}" y="${H - 6}" text-anchor="middle">${hh(new Date(t).toISOString())}</text>`;
@@ -314,17 +343,17 @@ function desenharGrafico(el, d, h0) {
   const largura = (W - mL - mR) / 48;
   reg.forEach(r => {
     const x = X(+new Date(r.t)) - largura / 2;
-    s += `<rect x="${x}" y="${Y(0) - 7}" width="${Math.max(2, largura - 1)}" height="7" rx="1.5" fill="var(--chuva)"><title>${hh(r.t)}: chuva observada${r.nao_prevista ? " (não prevista)" : ""}</title></rect>`;
+    s += `<rect x="${x}" y="${Y(ymin) - 7}" width="${Math.max(2, largura - 1)}" height="7" rx="1.5" fill="var(--chuva)"><title>${hh(r.t)}: chuva observada${r.nao_prevista ? " (não prevista)" : ""}</title></rect>`;
   });
   d.previsao.forEach(p => {
     const mm = p.chuva_acum_mm - (d.previsao.find(q => q.h === p.h - 1)?.chuva_acum_mm || 0);
-    if (mm >= 0.2) s += `<rect x="${X(+new Date(p.t)) - largura / 2}" y="${Y(0) - 7}" width="${Math.max(2, largura - 1)}" height="7" rx="1.5" fill="var(--chuva)" opacity=".4"><title>${hh(p.t)}: ${num(mm, 1)} mm previstos</title></rect>`;
+    if (mm >= 0.2) s += `<rect x="${X(+new Date(p.t)) - largura / 2}" y="${Y(ymin) - 7}" width="${Math.max(2, largura - 1)}" height="7" rx="1.5" fill="var(--chuva)" opacity=".4"><title>${hh(p.t)}: ${num(mm, 1)} mm previstos</title></rect>`;
   });
-  if (reg.length || d.previsao.some(p => p.chuva_acum_mm > 0)) s += `<text x="${mL + 4}" y="${Y(0) - 10}" style="fill:var(--chuva)">chuva</text>`;
+  if (reg.length || d.previsao.some(p => p.chuva_acum_mm > 0)) s += `<text x="${mL + 4}" y="${Y(ymin) - 10}" style="fill:var(--chuva)">chuva</text>`;
   // variantes em teste (linhas finas, rótulo no fim)
   const pub = d.modelo.modelo_publicado;
   const disp = d.previsao.length && d.previsao[0].variantes ? Object.keys(d.previsao[0].variantes) : [];
-  const nomesV = (d.modelo.variantes_no_grafico || disp).filter(n => n !== pub && disp.includes(n));
+  const nomesV = (d.modelo.variantes_no_site || d.modelo.variantes_no_grafico || disp).filter(n => n !== pub && disp.includes(n));
   const rotulos = [];
   nomesV.forEach((n, k) => {
     const pts = (ultimoObs ? [{ t: ultimoObs.t, v: ultimoObs.v }] : []).concat(d.previsao.map(p => ({ t: new Date(p.t), v: p.variantes[n] })));
@@ -356,7 +385,7 @@ function desenharGrafico(el, d, h0) {
     const c = classe(alvo.tipo === "prev" ? alvo.c : null) || CLASSES.find(k => k.ate == null || alvo.v <= k.ate);
     dica.innerHTML = `<b>${horaLocal(alvo.t.toISOString())}</b> · ${alvo.tipo === "prev" ? "previsto" : "observado"}<br>` +
       `${num(alvo.v, 0)} µg/m³ · ${esc(c.nome)}` + (alvo.tipo === "prev" ? `<br>faixa ${num(alvo.lo, 0)}–${num(alvo.hi, 0)} · média 24 h ${num(alvo.m24, 0)}` +
-      (alvo.var ? `<br><span style="color:var(--tinta-3)">em teste: ${Object.entries(alvo.var).filter(([n]) => n !== d.modelo.modelo_publicado).map(([n, v]) => `${esc(n)} ${num(v, 0)}`).join(" · ")}</span>` : "") : "");
+      (alvo.var ? `<br><span style="color:var(--tinta-3)">em teste: ${Object.entries(alvo.var).filter(([n]) => n !== d.modelo.modelo_publicado && (d.modelo.variantes_no_site || []).includes(n)).map(([n, v]) => `${esc(n)} ${num(v, 0)}`).join(" · ")}</span>` : "") : "");
     dica.style.left = (X(+alvo.t) / W * r.width) + "px"; dica.style.top = (Y(alvo.v) / H * r.height - 10) + "px"; dica.hidden = false;
   };
   const sair = () => { dica.hidden = true; gx.setAttribute("opacity", 0); gp.setAttribute("opacity", 0); };
@@ -378,28 +407,29 @@ function montarMapa(d, focos, limites) {
   const lim = [];
   d.sensores.forEach(s => {
     if (s.lat == null) return;
-    lim.push([s.lat, s.lon]);
+    if (!s.entorno) lim.push([s.lat, s.lon]);
     const cor = s.valido ? corClasse(s.classe) : "#8d968f";
     if (s.sinal_chuva) L.circle([s.lat, s.lon], { radius: 2200, color: "var(--chuva)", weight: 2, dashArray: "3 5", fill: false, interactive: false }).addTo(gSens);
     RAIOS.forEach((r, i) => L.circle([s.lat, s.lon], {
-      radius: r, stroke: i === 0, color: cor, weight: s.nama ? 2.5 : 1.2, opacity: .9, dashArray: s.valido ? null : "4 4",
+      radius: r, stroke: i === 0, color: cor, weight: s.nama ? 2.5 : 1.2, opacity: .9, dashArray: s.valido && !s.entorno ? null : "4 4",
       fillColor: cor, fillOpacity: s.valido ? OPAC[i] : 0.06, interactive: i === 2,
     }).addTo(gSens));
     const popup = `<div class="pop"><h3>${esc(s.nome)}${s.nama ? " ★" : ""}</h3>${s.valido ? seloClasse(s.classe) : `<span class="selo vazio">descartado</span>`}
       <dl><dt>PM2,5 corrigido</dt><dd>${s.valido ? num(s.pm, 1, " µg/m³") : "—"}</dd>
       <dt>Canais A / B (cf_1)</dt><dd>${num(s.a, 1)} / ${num(s.b, 1)}</dd>
       <dt>Umidade (sensor)</dt><dd>${num(s.ur, 0, "%")}</dd>
-      <dt>Dist. da NAMA</dt><dd>${num(s.dist_nama_km, 1, " km")}</dd>
+      <dt>Dist. de ${esc(window.__centro || "centro")}</dt><dd>${num(s.dist_nama_km, 1, " km")}</dd>
+      ${s.entorno ? `<dt>Estação do entorno</dt><dd>${esc(s.entorno)} · fora da mediana da cidade</dd>` : ""}
       <dt>Última leitura</dt><dd>${horaLocal(s.visto)}</dd>
       ${s.motivo ? `<dt>Observação</dt><dd>${esc(s.motivo)}</dd>` : ""}
       ${s.sinal_chuva ? `<dt>Sinal de chuva</dt><dd>${s.sinal_chuva.nivel === "provavel" ? "provável" : "possível"} na última hora: ${num(s.sinal_chuva.dT, 1)} °C e ${s.sinal_chuva.dUR > 0 ? "+" : ""}${num(s.sinal_chuva.dUR, 0)} pontos de umidade além do esperado${s.sinal_chuva.dPM != null ? `, PM2,5 ${num(s.sinal_chuva.dPM, 0)}%` : ""}</dd>` : ""}</dl></div>`;
     L.marker([s.lat, s.lon], {
-      icon: L.divIcon({ className: "rotulo-sensor" + (s.nama ? " rotulo-nama" : "") + (s.sinal_chuva ? " chuva" : ""), html: `<span>${s.nama ? "NAMA " : ""}${s.valido ? num(s.pm, 0) : "×"}</span>`, iconSize: null }),
+      icon: L.divIcon({ className: "rotulo-sensor" + (s.nama ? " rotulo-nama" : "") + (s.sinal_chuva ? " chuva" : ""), html: `<span>${s.nama ? "★ " : ""}${s.valido ? num(s.pm, 0) : "×"}</span>`, iconSize: null }),
       title: s.nome,
     }).bindPopup(popup).addTo(gSens);
   });
   if (!d.sensores.some(s => s.nama)) {
-    L.marker([nama.lat, nama.lon], { icon: L.divIcon({ className: "rotulo-sensor rotulo-nama", html: `<span>NAMA (${/última/.test(nama.origem || "") ? "sem dados" : "posição aproximada"})</span>`, iconSize: null }) }).addTo(gSens);
+    L.marker([nama.lat, nama.lon], { icon: L.divIcon({ className: "rotulo-sensor rotulo-nama", html: `<span>${esc(nama.nome)} (${/última/.test(nama.origem || "") ? "sem dados" : "posição aproximada"})</span>`, iconSize: null }) }).addTo(gSens);
   }
 
   // aeroportos (METAR)
@@ -412,7 +442,7 @@ function montarMapa(d, focos, limites) {
   // anéis de distância do IFB, centrados na NAMA
   d.focos.aneis_km.forEach(([, b]) => {
     L.circle([nama.lat, nama.lon], { radius: b * 1000, color: "#ffffff", weight: 1.5, dashArray: "6 6", fill: false, interactive: false }).addTo(gReg);
-    L.marker([nama.lat + b / 111.2, nama.lon], { interactive: false, icon: L.divIcon({ className: "rotulo-anel", html: `<span>${b} km da NAMA</span>`, iconSize: null }) }).addTo(gReg);
+    L.marker([nama.lat + b / 111.2, nama.lon], { interactive: false, icon: L.divIcon({ className: "rotulo-anel", html: `<span>${b} km de ${esc(nama.nome)}</span>`, iconSize: null }) }).addTo(gReg);
   });
   if (limites) {
     L.geoJSON(limites, { style: { color: "#ffffff", weight: 1.2, opacity: .8, fill: false }, interactive: false }).addTo(gReg);
@@ -477,7 +507,7 @@ function montarMapa(d, focos, limites) {
     });
     m.bindPopup(`<div class="pop"><h3>${esc(p.municipio)}</h3><dl>
       <dt>Situação</dt><dd>${ativo ? "ativo" : "recém-extinto (estimado)"}${p.provavel_incendio ? " · provável incêndio" : ""}</dd>
-      <dt>Distância da NAMA</dt><dd>${num(p.dist_km, 0, " km")} a ${cardeal(p.rumo)}</dd>
+      <dt>Distância de ${esc(nama.nome)}</dt><dd>${num(p.dist_km, 0, " km")} a ${cardeal(p.rumo)}</dd>
       <dt>Última detecção</dt><dd>${horaLocal(p.ultima_deteccao)}</dd>
       <dt>Duração</dt><dd>${num(p.duracao_h, 0, " h")}</dd>
       <dt>Pixels · FRP máx.</dt><dd>${num(p.n_pixels, 0)} · ${num(p.frp_max, 0, " MW")}</dd>
@@ -507,7 +537,7 @@ function montarMapa(d, focos, limites) {
       <div class="rotulo">Buffer de 1,5 km em cada estação</div>
       ${CLASSES.map(c => `<div class="linha"><i style="background:${c.cor}"></i>${esc(c.nome)}</div>`).join("")}
       <div class="linha"><i style="background:#8d968f;opacity:.5"></i>descartada no controle de qualidade</div>
-      <div class="rotulo">Focos (MonitorBETA)</div>
+      <div class="rotulo">Focos (${esc((d.focos.fonte || {}).nome || "MonitorBETA")})</div>
       <div class="linha"><i style="background:#e2361f;width:10px;height:10px"></i>ativo</div>
       <div class="linha"><i style="background:#9b8f86;width:10px;height:10px"></i>recém-extinto</div>
       <div class="linha"><i style="background:#e2361f;box-shadow:0 0 0 2.5px #ffd166"></i>provável incêndio</div>
@@ -516,7 +546,7 @@ function montarMapa(d, focos, limites) {
       <div class="linha"><i style="background:#7fd3dc;opacity:.6;border-radius:2px"></i>setor de onde vem a fumaça</div>
       ${traj.length > 1 ? `<div class="linha"><i style="background:#f2b35e;height:3px;border-radius:2px"></i>caminho do ar que chega agora (60 h, vento a 925 hPa)</div>` : ""}
       <div class="linha">foco apagado = fora do vento no horizonte escolhido</div>
-      <div class="linha">— — anéis de 50, 150 e 300 km da NAMA</div></details>`;
+      <div class="linha">— — anéis de 50, 150 e 300 km de ${esc(nama.nome)}</div></details>`;
     L.DomEvent.disableClickPropagation(div);
     return div;
   };
