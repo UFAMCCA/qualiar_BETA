@@ -64,7 +64,11 @@ def hora_cheia(dt):
 def http_text(url, timeout=90):
     req = urllib.request.Request(url, headers={"User-Agent": "qualiar-ufam/1.0 (UFAM)"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read().decode("utf-8", errors="replace")
+        dados = r.read()
+        if dados[:2] == b"\x1f\x8b":
+            import gzip
+            dados = gzip.decompress(dados)
+        return dados.decode("utf-8", errors="replace")
 
 
 def norm(nome):

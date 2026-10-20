@@ -50,7 +50,7 @@ REGIOES = [
     {"id": "manaus", "nome": "Manaus", "centro": "MIT_NAMA_UFAM", "lat": -3.0960, "lon": -59.9660,
      "caixa": (-60.15, -3.18, -59.83, -2.93), "entorno": [], "focos": "monitorbeta",
      "metar": ["SBEG", "SBMN"], "municipios": []},
-    {"id": "itacoatiara", "nome": "Itacoatiara", "centro": "SEMA_DCAM_38", "lat": -3.1430, "lon": -58.4440,
+    {"id": "itacoatiara", "nome": "Itacoatiara", "centro": "SEMA_DCAM_36", "lat": -3.1430, "lon": -58.4440,
      "caixa": (-58.60, -3.28, -58.30, -3.00), "entorno": [ATTO], "focos": "inpe", "metar": [],
      "municipios": ["Itacoatiara/AM", "Autazes/AM", "Nova Olinda do Norte/AM", "Silves/AM", "Urucará/AM",
                     "Barreirinha/AM", "Parintins/AM", "Urucurituba/AM", "Maués/AM", "Itapiranga/AM",

@@ -13,6 +13,7 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import math
 import os
@@ -54,7 +55,11 @@ def http_json(url: str, headers: dict | None = None, tentativas: int = 3, timeou
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "QUALIAR-UFAM/1.0", **(headers or {})})
             with urllib.request.urlopen(req, timeout=timeout) as r:
-                return json.loads(r.read().decode("utf-8"))
+                dados = r.read()
+                # o IBGE (e outros) às vezes responde comprimido em gzip mesmo sem pedirmos
+                if dados[:2] == b"\x1f\x8b":
+                    dados = gzip.decompress(dados)
+                return json.loads(dados.decode("utf-8"))
         except urllib.error.HTTPError as e:
             if e.code in (400, 401, 403, 404):
                 raise
@@ -215,9 +220,11 @@ def registrar_hora(historico, t_iso, valores: dict, met_sens: dict | None = None
 def achar_nama(sensores, estado: dict, reg=None):
     """Acha a estação central. Retorna (sensor ou posição guardada, origem)."""
     reg = reg or C.REGIOES[0]
-    conhecida = estado.get("nama") or {}
-    alvo_id = (C.NAMA_SENSOR_INDEX if reg["id"] == "manaus" else None) or conhecida.get("id")
     nome = reg["centro"].strip().lower()
+    conhecida = estado.get("nama") or {}
+    if reg["id"] != "manaus" and str(conhecida.get("nome", "")).strip().lower() != nome:
+        conhecida = {}      # a estação central mudou na configuração: esquece a guardada
+    alvo_id = (C.NAMA_SENSOR_INDEX if reg["id"] == "manaus" else None) or conhecida.get("id")
     achado, origem = None, None
     for s in sensores:
         if alvo_id is not None and s["id"] == alvo_id:
