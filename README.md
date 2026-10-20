@@ -20,6 +20,14 @@ Site estático (GitHub Pages) do CCA UFAM. Mostra a qualidade do ar medida pelas
 5. Em **Actions → QUALIAR-UFAM (a cada hora) → Run workflow**, marque *semear* na primeira execução. Ela baixa as últimas 24 h de médias horárias de cada sensor, para o site já abrir com tendência e média de 24 h. Depois a coleta roda sozinha no minuto 12 de cada hora.
 6. Confira o resultado: o topo do site mostra o estado de cada fonte (PurpleAir, Open-Meteo, METAR, MonitorBETA, INMET). Até a primeira coleta, a página avisa que ainda não há dados.
 
+## Cidades com campus (seletor no topo do site)
+Além de Manaus, o coletor calcula a qualidade do ar e a previsão para Itacoatiara, Parintins, Humaitá, Coari e Benjamin Constant. Cada cidade tem, em `scripts/config.py` (`REGIOES`):
+a estação central (nome exato na PurpleAir) e uma caixa com os sensores que entram na mediana da cidade;
+-estações de referência do entorno, mostradas mas fora da mediana (a torre ATTO, para Itacoatiara e Parintins);
+-a lista de municípios vizinhos. Os focos vêm direto do INPE e são atribuídos ao município pelo limite do IBGE, baixado uma vez e guardado em `docs/data/regioes/<cidade>/limites.geojson`. Em Benjamin Constant, focos a oeste da fronteira contam como "Colômbia e Peru".
+-Os dados de cada cidade ficam em `docs/data/regioes/<cidade>/`; os de Manaus continuam em `docs/data/`. O índice `docs/data/regioes.json` alimenta o seletor. Na primeira rodada de uma cidade, o coletor baixa 24 h de histórico dos sensores dela (uma vez). Cada cidade custa uma consulta a mais por hora à PurpleAir.
+
+
 ## Estações Centrais
 
 Em Manaus a estação PurpleAir MIT_NAMA_UFAM é o centro para distâncias e direções até os focos, os anéis de 50, 150 e 300 km e o ponto da meteorologia. Para os demais, cada município tem sua própria estação Central. O mapa da PurpleAir não mostra o número do sensor, mas a API devolve nome, número e posição de cada sensor na mesma resposta. O coletor procura o nome exato, por exemplo, `MIT_NAMA_UFAM` (definido em `NAMA_NOME`, `scripts/config.py`) e guarda o número e a posição em `docs/data/historico.json`. Se numa hora o sensor não enviar dados, usa a última posição conhecida; só sem nenhum registro usa as coordenadas aproximadas do campus (`NAMA_LAT_PADRAO`, `NAMA_LON_PADRAO`). O site mostra um aviso nos dois casos. O número encontrado aparece no topo do método, no site, e em `docs/data/qualiar.json` (campo `nama.id`).
