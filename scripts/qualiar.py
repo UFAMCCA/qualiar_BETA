@@ -65,8 +65,8 @@ def http_json(url: str, headers: dict | None = None, tentativas: int = 3, timeou
     raise erro
 
 
-def ler_json(nome, padrao):
-    p = C.DATA_DIR / nome
+def ler_json(nome, padrao, pasta=None):
+    p = (pasta or C.DATA_DIR) / nome
     if p.exists():
         try:
             return json.loads(p.read_text(encoding="utf-8"))
@@ -75,9 +75,10 @@ def ler_json(nome, padrao):
     return padrao
 
 
-def gravar_json(nome, obj):
-    C.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    (C.DATA_DIR / nome).write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+def gravar_json(nome, obj, pasta=None):
+    pasta = pasta or C.DATA_DIR
+    pasta.mkdir(parents=True, exist_ok=True)
+    (pasta / nome).write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
 
 def dist_km(lat1, lon1, lat2, lon2):
@@ -146,11 +147,12 @@ def processar_sensor(s):
     return s
 
 
-def coletar_purpleair(chave: str, agora: datetime):
+def coletar_purpleair(chave: str, agora: datetime, caixa=None):
+    o, s_, l, n = caixa or (C.PA_NW[0], C.PA_SE[1], C.PA_SE[0], C.PA_NW[1])
     q = {
         "fields": ",".join(C.PA_CAMPOS),
         "max_age": C.PA_MAX_IDADE_S,
-        "nwlng": C.PA_NW[0], "nwlat": C.PA_NW[1], "selng": C.PA_SE[0], "selat": C.PA_SE[1],
+        "nwlng": o, "nwlat": n, "selng": l, "selat": s_,
     }
     url = "https://api.purpleair.com/v1/sensors?" + urllib.parse.urlencode(q)
     d = http_json(url, {"X-API-Key": chave})
@@ -210,11 +212,12 @@ def registrar_hora(historico, t_iso, valores: dict, met_sens: dict | None = None
     historico["horas"] = historico["horas"][-C.HISTORICO_H:]
 
 
-def achar_nama(sensores, estado: dict):
+def achar_nama(sensores, estado: dict, reg=None):
     """Acha a estação central. Retorna (sensor ou posição guardada, origem)."""
+    reg = reg or C.REGIOES[0]
     conhecida = estado.get("nama") or {}
-    alvo_id = C.NAMA_SENSOR_INDEX or conhecida.get("id")
-    nome = C.NAMA_NOME.strip().lower()
+    alvo_id = (C.NAMA_SENSOR_INDEX if reg["id"] == "manaus" else None) or conhecida.get("id")
+    nome = reg["centro"].strip().lower()
     achado, origem = None, None
     for s in sensores:
         if alvo_id is not None and s["id"] == alvo_id:
@@ -223,7 +226,7 @@ def achar_nama(sensores, estado: dict):
         for s in sensores:
             if str(s["nome"]).strip().lower() == nome:
                 achado, origem = s, f"nome exato na PurpleAir (sensor {s['id']})"; break
-    if not achado:
+    if not achado and reg["id"] == "manaus":
         for s in sensores:
             if "nama" in str(s["nome"]).lower():
                 achado, origem = s, f"nome parecido na PurpleAir: {s['nome']} (sensor {s['id']})"; break
@@ -333,9 +336,9 @@ def preparar_focos(focos_gj, nama, agora):
     return out
 
 
-def resumo_municipios(focos):
+def resumo_municipios(focos, lista=None):
     tab = {m: {"municipio": m, "ativos": 0, "recem_extintos": 0, "provaveis_incendios": 0, "dist_min_km": None}
-           for m in C.MUNICIPIOS}
+           for m in (lista if lista is not None else C.MUNICIPIOS)}
     for f in focos:
         if f["categoria"] == "extinto":
             continue
@@ -713,9 +716,9 @@ def prever(agora, p0, historico, meteo, focos, lavagem=None, chuva_obs=None, cam
 
 
 def risco_matinal(prev):
-    """Primeira hora das próximas 18 em que F24R passa do limite numa manhã de fator alto."""
+    """Primeira hora das próximas 24 em que F24R passa do limite numa manhã de fator alto."""
     for p in prev:
-        if p["h"] <= 18 and p.get("noite", 1) > 1.5 and p["variantes"].get("F24R", 0) >= C.RISCO_MATINAL_UG:
+        if p["h"] <= C.RISCO_MATINAL_H and p.get("noite", 1) > 1.5 and p["variantes"].get("F24R", 0) >= C.RISCO_MATINAL_UG:
             return {"t": p["t"], "pm": p["variantes"]["F24R"], "fator": p["noite"], "origem": p.get("ifr_uf", {})}
     return None
 
@@ -812,7 +815,7 @@ def sint_regional(agora):
         for _ in range(25):
             la, lo = -2.6 + rnd.gauss(0, 0.8), -55.0 + rnd.gauss(0, 1.0)
             g = C.REG_CELULA_GRAUS
-            cel[f"{iso(t)}|{(math.floor(la / g) + .5) * g:.3f}|{(math.floor(lo / g) + .5) * g:.3f}"] = [rnd.uniform(1, 3), "PA"]
+            cel[f"{iso(t)}|{(math.floor(la / g) + .5) * g:.3f}|{(math.floor(lo / g) + .5) * g:.3f}"] = [rnd.uniform(1, 3), "PA", "SANTAREM", "BRASIL"]
     pontos = []
     for la in C.REG_GRADE_LAT:
         for lo in C.REG_GRADE_LON:
@@ -838,6 +841,81 @@ def sint_metar(h0):
 
 
 # ================================================================ principal
+def pasta_regiao(reg):
+    return C.DATA_DIR if reg["id"] == "manaus" else C.DATA_DIR / "regioes" / reg["id"]
+
+
+def nomes_municipios(reg):
+    """Nomes para a tabela de focos: municípios brasileiros e, se houver, o rótulo dos países vizinhos."""
+    bra = [m.split("/")[0] for m in reg["municipios"] if len(m.partition("/")[2]) == 2]
+    return bra + ([reg["estrangeiro"]["rotulo"]] if reg.get("estrangeiro") else [])
+
+
+def limites_ufs(status):
+    """Limites estaduais do IBGE (uma vez; guardados em docs/data/ufs.geojson) para saber a UF de cada foco."""
+    gj = ler_json("ufs.geojson", None)
+    if gj:
+        return gj
+    try:
+        gj = http_json("https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR"
+                       "?formato=application/vnd.geo+json&qualidade=minima&intrarregiao=UF")
+        gravar_json("ufs.geojson", gj)
+        return gj
+    except Exception as e:
+        status["Limites IBGE (UF)"] = f"erro: {e}"
+        return None
+
+
+def buscar_limites_ibge(reg, status):
+    """Limites municipais (malha simplificada do IBGE), baixados uma vez e guardados na pasta da região."""
+    pasta = pasta_regiao(reg)
+    if (pasta / "limites.geojson").exists():
+        return ler_json("limites.geojson", None, pasta)
+    feats, ufs = [], {}
+    for m in reg["municipios"]:
+        nome, _, uf = m.partition("/")
+        if len(uf) == 2:
+            ufs.setdefault(uf, []).append(nome)
+    try:
+        for uf, nomes in ufs.items():
+            lista = http_json(f"https://servicodados.ibge.gov.br/api/v1/localidades/estados/{uf}/municipios")
+            por_nome = {RG.norm(x["nome"]): x["id"] for x in lista}
+            for nome in nomes:
+                cod = por_nome.get(RG.norm(nome))
+                if not cod:
+                    continue
+                g = http_json(f"https://servicodados.ibge.gov.br/api/v3/malhas/municipios/{cod}"
+                              "?formato=application/vnd.geo+json&qualidade=minima")
+                for f in (g.get("features") or [g]):
+                    geom = f.get("geometry") or {}
+                    pts = []
+                    for anel in (geom.get("coordinates") or []):
+                        anel = anel[0] if geom.get("type") == "MultiPolygon" else anel
+                        pts += [c for c in anel if isinstance(c, list) and len(c) >= 2]
+                    rot = [round(sum(c[0] for c in pts) / len(pts), 4), round(sum(c[1] for c in pts) / len(pts), 4)] if pts else None
+                    feats.append({"type": "Feature", "geometry": geom, "properties": {"nome": nome, "uf": uf, "rotulo": rot}})
+        gj = {"type": "FeatureCollection", "features": feats}
+        gravar_json("limites.geojson", gj, pasta)
+        status["Limites IBGE"] = f"ok ({len(feats)} municípios)"
+        return gj
+    except Exception as e:
+        status["Limites IBGE"] = f"erro: {e}"
+        return None
+
+
+def sint_regiao(reg, agora):
+    """Sensores sintéticos em torno do centro de uma região do interior (teste)."""
+    rnd = random.Random(hash(reg["id"]) % 1000 + int(agora.timestamp() // 3600))
+    sens = []
+    for i, (dla, dlo) in enumerate([(0, 0), (0.02, -0.03), (-0.025, 0.02)]):
+        base = 60 + 40 * rnd.random()
+        cf = base / 0.6
+        sens.append(processar_sensor({"id": 80000 + 10 * C.REGIOES.index(reg) + i, "nome": reg["centro"] if i == 0 else f"{reg['nome']} {i}",
+                                      "lat": reg["lat"] + dla, "lon": reg["lon"] + dlo, "a": round(cf, 1), "b": round(cf * 1.02, 1),
+                                      "ur": 70, "t": 31.0, "visto": iso(agora)}))
+    return sens
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--teste", action="store_true")
@@ -845,23 +923,24 @@ def main():
     ap.add_argument("--agora")
     ap.add_argument("--focos-local", help="pasta com focos.geojson, resumo.json e limites.geojson")
     ap.add_argument("--forcar", action="store_true", help="coleta mesmo que esta hora já tenha sido coletada")
+    ap.add_argument("--regioes", help="ids separados por vírgula (padrão: todas)")
     a = ap.parse_args()
 
-    status = {}
+    status_comum = {}
     teste = a.teste
     focos_dir = a.focos_local or (os.path.join(os.path.dirname(__file__), "amostra") if teste else None)
 
-    # focos primeiro: no teste, o "agora" é o da amostra do MonitorBETA
+    # focos do MonitorBETA (Manaus); no teste, o "agora" é o da amostra
     try:
         if focos_dir:
             ler = lambda n: json.load(open(os.path.join(focos_dir, n), encoding="utf-8"))
-            focos_gj, mb_resumo, limites = ler("focos.geojson"), ler("resumo.json"), ler("limites.geojson")
+            focos_gj, mb_resumo, limites_mb = ler("focos.geojson"), ler("resumo.json"), ler("limites.geojson")
         else:
-            focos_gj, mb_resumo, limites = baixar_monitorbeta()
-        status["MonitorBETA"] = "ok"
+            focos_gj, mb_resumo, limites_mb = baixar_monitorbeta()
+        status_comum["MonitorBETA"] = "ok"
     except Exception as e:
-        focos_gj, mb_resumo, limites = {"features": []}, {}, None
-        status["MonitorBETA"] = f"erro: {e}"
+        focos_gj, mb_resumo, limites_mb = {"features": []}, {}, None
+        status_comum["MonitorBETA"] = f"erro: {e}"
 
     if a.agora:
         agora = parse_iso(a.agora)
@@ -872,42 +951,100 @@ def main():
     h0 = hora_cheia(agora)
 
     # Trava: a coleta pode ser disparada por mais de um agendador (GitHub e Google).
-    # Se esta hora já foi coletada com sucesso, não gasta pontos da PurpleAir de novo.
     if not teste and not a.forcar and not a.semear:
         ult = ler_json("qualiar.json", {})
         if ult.get("hora_base") == iso(h0) and str(ult.get("fontes_status", {}).get("PurpleAir", "")).startswith("ok"):
             print(f"Hora {iso(h0)} já coletada em {ult.get('gerado_em')}; nada a fazer (use --forcar para repetir).")
             return
 
-    historico = ler_json("historico.json", {"horas": []}) if not teste else {"horas": []}
-    log = ler_json("validacao_log.json", {"previsoes": []}) if not teste else {"previsoes": []}
+    # focos do INPE para toda a área (fumaça distante e focos das regiões do interior) e vento regional
+    cache_reg, campo = {}, None
+    try:
+        if teste:
+            cache_reg, campo = sint_regional(agora)
+            status_comum["INPE regional"] = "dados sintéticos (teste)"
+        else:
+            cache_reg = ler_json("fogo_regional.json", {})
+            ufs = RG.poligonos(limites_ufs(status_comum), "codarea")
+            RG.atualizar_focos(cache_reg, agora, status_comum, ufs=ufs)
+            campo = RG.Campo.coletar(http_json)
+            status_comum["Vento regional"] = "ok"
+            RG.gravar_cache(C.DATA_DIR / "fogo_regional.json", cache_reg)
+    except Exception as e:
+        status_comum["Fumaça distante"] = f"erro: {e}"
 
-    # PM2,5
-    sensores, meteo = [], []
+    chave = "" if teste else os.environ.get("PURPLEAIR_API_KEY", "").strip()
+    cache_pa = {}
+
+    def purpleair(caixa):
+        k = tuple(caixa)
+        if k not in cache_pa:
+            cache_pa[k] = coletar_purpleair(chave, agora, caixa)
+        return [dict(s_) for s_ in cache_pa[k]]
+
+    ids = set(a.regioes.split(",")) if a.regioes else None
+    indice = ler_json("regioes.json", {"regioes": []}) if not teste else {"regioes": []}
+    resumo = {r["id"]: r for r in indice.get("regioes", [])}
+    for reg in C.REGIOES:
+        if ids and reg["id"] not in ids:
+            continue
+        try:
+            r = processar_regiao(reg, a, agora, h0, teste, dict(status_comum), chave, purpleair,
+                                 focos_gj, mb_resumo, limites_mb, cache_reg, campo)
+            resumo[reg["id"]] = r
+        except Exception as e:  # uma região com problema não derruba as outras
+            import traceback
+            traceback.print_exc()
+            resumo.setdefault(reg["id"], {"id": reg["id"], "nome": reg["nome"]})["erro"] = str(e)
+    ordem = [x["id"] for x in C.REGIOES]
+    gravar_json("regioes.json", {"gerado_em": iso(agora),
+                                 "regioes": sorted(resumo.values(), key=lambda r: ordem.index(r["id"]) if r["id"] in ordem else 99)})
+
+
+def processar_regiao(reg, a, agora, h0, teste, status, chave, purpleair, focos_gj, mb_resumo, limites_mb, cache_reg, campo):
+    pasta = pasta_regiao(reg)
+    eh_manaus = reg["id"] == "manaus"
+    if not eh_manaus:
+        status.pop("MonitorBETA", None)
+    historico = ler_json("historico.json", {"horas": []}, pasta) if not teste else {"horas": []}
+    log = ler_json("validacao_log.json", {"previsoes": []}, pasta) if not teste else {"previsoes": []}
+
+    # PM2,5: sensores da cidade (mediana) e estações de referência do entorno (só exibidas)
+    sensores, meteo, anterior_sint = [], [], None
     if teste:
-        sensores, meteo, anterior_sint = sinteticos(agora)
+        if eh_manaus:
+            sensores, meteo, anterior_sint = sinteticos(agora)
+        else:
+            sensores = sint_regiao(reg, agora)
+            _, meteo, _ = sinteticos(agora)
         status["PurpleAir"] = "dados sintéticos (teste)"
         status["Open-Meteo"] = "dados sintéticos (teste)"
+    elif not chave:
+        status["PurpleAir"] = "sem chave: cadastre o segredo PURPLEAIR_API_KEY"
     else:
-        chave = os.environ.get("PURPLEAIR_API_KEY", "").strip()
-        if not chave:
-            status["PurpleAir"] = "sem chave: cadastre o segredo PURPLEAIR_API_KEY"
-        else:
-            try:
-                sensores = coletar_purpleair(chave, agora)
-                status["PurpleAir"] = f"ok ({len(sensores)} sensores)"
-                if a.semear:
-                    semear_historico_pa(chave, sensores, agora, historico)
-            except Exception as e:
-                status["PurpleAir"] = f"erro: {e}"
+        try:
+            sensores = purpleair(reg["caixa"])
+            for ent in reg.get("entorno", []):
+                for s_ in purpleair(ent["caixa"]):
+                    s_["entorno"] = ent["nome"]
+                    sensores.append(s_)
+            status["PurpleAir"] = f"ok ({len(sensores)} sensores)"
+            semear = (a.semear and eh_manaus) or (not eh_manaus and len(historico["horas"]) < 3)
+            if semear:
+                semear_historico_pa(chave, [s_ for s_ in sensores if not s_.get("entorno")], agora, historico)
+        except Exception as e:
+            status["PurpleAir"] = f"erro: {e}"
+    da_cidade = [s_ for s_ in sensores if not s_.get("entorno")]
 
-    nama_s, nama_origem = achar_nama(sensores, historico.setdefault("estado", {}))
-    nama = {"nome": nama_s["nome"] if nama_s else C.NAMA_NOME, "id": nama_s["id"] if nama_s else None,
-            "lat": nama_s["lat"] if nama_s else C.NAMA_LAT_PADRAO, "lon": nama_s["lon"] if nama_s else C.NAMA_LON_PADRAO,
+    nama_s, nama_origem = achar_nama(da_cidade, historico.setdefault("estado", {}), reg)
+    if not nama_s:
+        nama_origem = "coordenadas aproximadas da cidade (config.py)"
+    nama = {"nome": nama_s["nome"] if nama_s else reg["centro"], "id": nama_s["id"] if nama_s else None,
+            "lat": nama_s["lat"] if nama_s else reg["lat"], "lon": nama_s["lon"] if nama_s else reg["lon"],
             "pm": nama_s["pm"] if nama_s else None, "classe": nama_s["classe"] if nama_s else None, "origem": nama_origem}
-    for s in sensores:
-        s["nama"] = bool(nama_s and not nama_s.get("_offline") and s["id"] == nama_s["id"])
-        s["dist_nama_km"] = round(dist_km(nama["lat"], nama["lon"], s["lat"], s["lon"]), 1)
+    for s_ in sensores:
+        s_["nama"] = bool(nama_s and not nama_s.get("_offline") and s_["id"] == nama_s["id"])
+        s_["dist_nama_km"] = round(dist_km(nama["lat"], nama["lon"], s_["lat"], s_["lon"]), 1)
 
     cams = {}
     if not teste:
@@ -922,32 +1059,32 @@ def main():
         except Exception as e:
             status["CAMS"] = f"erro: {e}"
     else:
-        # CAMS sintético: subestima o nível, mas traz um pico de madrugada
         for k in range(-48, 49):
             t = hora_cheia(agora) + timedelta(hours=k)
             hl = t.astimezone(TZ).hour
             cams[t] = 18 + 14 * math.exp(-((hl - 6) % 24 - 0) ** 2 / 8) + 6 * math.sin(k / 9)
 
-    validos = [s for s in sensores if s["valido"]]
-    p0 = round(median([s["pm"] for s in validos]), 1) if len(validos) >= C.SENSORES_MIN else None
-    if teste and p0 is not None:  # hora anterior (antes da pancada) com leituras por sensor
+    validos = [s_ for s_ in da_cidade if s_["valido"]]
+    minimo = C.SENSORES_MIN if eh_manaus else 1     # no interior há cidades com uma única estação
+    p0 = round(median([s_["pm"] for s_ in validos]), 1) if len(validos) >= minimo else None
+    if teste and eh_manaus and p0 is not None:
         registrar_hora(historico, iso(h0 - timedelta(hours=1)),
                        {k: v[0] for k, v in anterior_sint.items() if k != "90009"},
                        {k: v for k, v in anterior_sint.items() if k != "90009"})
     if p0 is not None:
-        registrar_hora(historico, iso(h0), {str(s["id"]): s["pm"] for s in validos},
-                       {str(s["id"]): [s["pm"], s.get("ur"), s.get("t")] for s in validos})
-    if teste and p0 is not None:  # histórico sintético para tendência e média de 24 h
+        registrar_hora(historico, iso(h0), {str(s_["id"]): s_["pm"] for s_ in validos},
+                       {str(s_["id"]): [s_["pm"], s_.get("ur"), s_.get("t")] for s_ in validos})
+    if teste and p0 is not None:
         rnd = random.Random(7)
-        p1 = next(h["mediana"] for h in historico["horas"] if h["t"] == iso(h0 - timedelta(hours=1)))
-        for k in range(2, 30):
+        p1 = next((h["mediana"] for h in historico["horas"] if h["t"] == iso(h0 - timedelta(hours=1))), p0)
+        for k in range(1 if not eh_manaus else 2, 30):
             v = max(5, p1 - 1.8 * (k - 1) + 10 * math.sin(k / 4) + rnd.gauss(0, 2))
             historico["horas"].append({"t": iso(h0 - timedelta(hours=k)), "mediana": round(v, 1), "n": 11, "sensores": {}})
         historico["horas"].sort(key=lambda h: h["t"])
-        # estado seco antes da pancada e uma previsão emitida 3 h antes para esta hora
-        historico["estado"] = {"k_seco": 4.4, "anomalia_seca": round(p1 - C.PM_BASE, 1), "t_seco": iso(h0 - timedelta(hours=1))}
-        log["previsoes"].append({"emitida": iso(h0 - timedelta(hours=3)), "alvo": iso(h0), "h": 3,
-                                 "prev": round(p1 * 1.08, 1), "p0": round(p1 * 0.95, 1), "chuva_prev_mm": 0.0})
+        if eh_manaus:
+            historico["estado"] = {"k_seco": 4.4, "anomalia_seca": round(p1 - C.PM_BASE, 1), "t_seco": iso(h0 - timedelta(hours=1))}
+            log["previsoes"].append({"emitida": iso(h0 - timedelta(hours=3)), "alvo": iso(h0), "h": 3,
+                                     "prev": round(p1 * 1.08, 1), "p0": round(p1 * 0.95, 1), "chuva_prev_mm": 0.0})
 
     # meteorologia: agora e próximas 24 h
     met = {l["t"]: l for l in meteo}
@@ -956,35 +1093,37 @@ def main():
     chuva = resumo_chuva(meteo, agora) if meteo else {}
 
     # chuva observada
+    estacoes = {k: (C.METAR_ESTACOES.get(k) or C.METAR_EXTRA.get(k)) for k in reg.get("metar", [])}
+    estacoes = {k: v for k, v in estacoes.items() if v}
     metar, inmet = [], {}
     if teste:
-        metar = sint_metar(h0)
+        metar = sint_metar(h0) if eh_manaus else []
         status["METAR"] = "dados sintéticos (teste)"
-    else:
+    elif estacoes:
         try:
-            metar = R.coletar_metar(http_json, iso, h0)
+            metar = R.coletar_metar(http_json, iso, h0, estacoes)
             status["METAR"] = f"ok ({len(metar)} aeroportos)" if metar else "ok (sem boletins recentes)"
         except Exception as e:
             status["METAR"] = f"erro: {e}"
         tok = os.environ.get("INMET_TOKEN", "").strip()
-        if tok:
+        if tok and eh_manaus:
             try:
                 inmet = R.coletar_inmet(http_json, tok, h0)
                 status["INMET"] = "ok"
             except Exception as e:
                 status["INMET"] = f"erro: {e}"
     ant_item = next((h for h in historico["horas"] if h["t"] == iso(h0 - timedelta(hours=1))), None)
-    sinais = R.assinatura_sensores(sensores, (ant_item or {}).get("met", {}), m_agora,
+    sinais = R.assinatura_sensores(da_cidade, (ant_item or {}).get("met", {}), m_agora,
                                    met.get(iso(h0 - timedelta(hours=1))))
     ant_chuva = next((r for r in historico.get("chuva", []) if r["t"] == iso(h0 - timedelta(hours=1))), None)
     prevista_mm = (ant_chuva or {}).get("prox_prevista", {}).get(iso(h0))
     if prevista_mm is None and m_agora:
         prevista_mm = m_agora.get("chuva") or 0.0
     prox = {iso(h0 + timedelta(hours=h)): (met.get(iso(h0 + timedelta(hours=h))) or {}).get("chuva") or 0.0 for h in (1, 2, 3)}
-    reg_chuva = R.registrar(historico, h0, iso, sensores, sinais, metar,
+    reg_chuva = R.registrar(historico, h0, iso, da_cidade, sinais, metar,
                             inmet.get(h0) if inmet else None, prevista_mm, prox)
-    for s in sensores:
-        s["sinal_chuva"] = sinais.get(str(s["id"]))
+    for s_ in sensores:
+        s_["sinal_chuva"] = sinais.get(str(s_["id"]))
     lavagem = R.estado_lavagem(historico, h0, iso, parse_iso)
     chuva_obs = R.serie_observada(historico, parse_iso)
     for t, mm in (inmet or {}).items():
@@ -992,45 +1131,50 @@ def main():
     if chuva:
         chuva = R.corrigir_dias_sem_chuva(chuva, historico, h0, TZ, parse_iso)
 
-    # focos
-    focos = preparar_focos(focos_gj, nama, agora)
-    munis = resumo_municipios(focos)
+    # focos do entorno (limites municipais definem o que é local)
+    estrangeiro = reg.get("estrangeiro")
+    if eh_manaus:
+        limites = limites_mb
+        polys = RG.poligonos(limites)
+        focos = preparar_focos(focos_gj, nama, agora)
+        munis = resumo_municipios(focos)
+        fonte_focos = {"nome": "MonitorBETA", "url": "https://ufamcca.github.io/MonitorBETA/",
+                       "gerado_em": mb_resumo.get("gerado_em")}
+    else:
+        limites = buscar_limites_ibge(reg, status) if not teste else None
+        polys = RG.poligonos(limites)
+        focos = RG.focos_locais(cache_reg, agora, nama, polys, estrangeiro)
+        munis = resumo_municipios(focos, nomes_municipios(reg))
+        fonte_focos = {"nome": "INPE (BDQueimadas)", "url": "https://terrabrasilis.dpi.inpe.br/queimadas/bdqueimadas/",
+                       "gerado_em": iso(agora)}
 
-    # fumaça distante: focos do INPE fora dos 13 municípios + retrotrajetórias
+    # fumaça distante para o centro desta região
     regional = None
-    try:
-        if teste:
-            cache_reg, campo = sint_regional(agora)
-            status["INPE regional"] = "dados sintéticos (teste)"
-        else:
-            cache_reg = ler_json("fogo_regional.json", {})
-            RG.atualizar_focos(cache_reg, agora, nama, RG.poligonos(limites), status)
-            campo = RG.Campo.coletar(http_json)
-            status["Vento regional"] = "ok"
-        idx = RG.indexar(cache_reg)
-        horas = [h0 + timedelta(hours=h) for h in range(0, 25)]
-        ifr_map, traj0 = RG.calcular(campo, idx, agora, nama, horas)
-        hist_reg = historico.setdefault("regional", [])
-        RG.preencher_historico(hist_reg, campo, idx, agora, nama, met)
-        serie_obs = {x["t"]: x["mediana"] for x in historico["horas"]}
-        k_reg, n_cal = RG.calibrar_k(hist_reg, serie_obs, h0, C.PM_BASE)
-        regional = {"ifr": ifr_map, "traj": traj0, "k_reg": k_reg, "n_cal": n_cal,
-                    "celulas": len(cache_reg.get("celulas", {}))}
-        if not teste:
-            RG.gravar_cache(C.DATA_DIR / "fogo_regional.json", cache_reg)
-    except Exception as e:
-        status["Fumaça distante"] = f"erro: {e}"
+    if campo is not None:
+        try:
+            idx = RG.indexar(cache_reg, nama, polys, estrangeiro)
+            horas = [h0 + timedelta(hours=h) for h in range(0, 25)]
+            ifr_map, traj0 = RG.calcular(campo, idx, agora, nama, horas)
+            hist_reg = historico.setdefault("regional", [])
+            RG.preencher_historico(hist_reg, campo, idx, agora, nama, met)
+            serie_obs = {x["t"]: x["mediana"] for x in historico["horas"]}
+            k_reg, n_cal = RG.calibrar_k(hist_reg, serie_obs, h0, C.PM_BASE)
+            regional = {"ifr": ifr_map, "traj": traj0, "k_reg": k_reg, "n_cal": n_cal,
+                        "celulas": sum(len(v) for kk, b in idx.items() if kk != "_memo" for v in b.values())}
+        except Exception as e:
+            status["Fumaça distante"] = f"erro: {e}"
 
     # previsão
     previsao, info = ([], {})
     if p0 is not None:
         previsao, info = prever(agora, p0, historico, meteo, focos, lavagem, chuva_obs, cams, regional)
         for p in previsao:
+            p["iqar"] = C.iqar(p["pm"])
+            p["iqar24"] = C.iqar(p.get("media24"))
             if p["h"] in C.DESTAQUES_H:
                 log["previsoes"].append({"emitida": iso(h0), "alvo": p["t"], "h": p["h"], "prev": p["pm"], "p0": p0,
                                          "chuva_prev_mm": p["chuva_acum_mm"], "variantes": p["variantes"],
                                          "modelo": C.MODELO_PUBLICADO})
-    # efeito da chuva não prevista: o que se previa para agora antes da chuva x o observado
     efeito = None
     if lavagem["nao_prevista_recente"] and p0 is not None:
         inicio = min((r["t"] for r in historico.get("chuva", [])
@@ -1041,7 +1185,6 @@ def main():
             efeito = {"emitida": e["emitida"], "previsto": e["prev"], "observado": p0, "dif": round(p0 - e["prev"], 1)}
     validacao = validar(log, historico, agora)
 
-    # tendência e média 24 h observadas
     serie = [h for h in historico["horas"] if parse_iso(h["t"]) <= h0]
     ult24 = [h for h in serie if parse_iso(h["t"]) > h0 - timedelta(hours=24)]
     media24 = round(sum(h["mediana"] for h in ult24) / len(ult24), 1) if ult24 else None
@@ -1050,16 +1193,20 @@ def main():
 
     saida = {
         "gerado_em": iso(agora), "hora_base": iso(h0), "dados_de_teste": teste, "fontes_status": status,
+        "regiao": {"id": reg["id"], "nome": reg["nome"], "centro": reg["centro"],
+                   "entorno": [e["nome"] for e in reg.get("entorno", [])],
+                   "municipios": [m.split("/")[0] for m in reg["municipios"]] if not eh_manaus else list(C.MUNICIPIOS)},
         "classes": [{k: (None if v == math.inf else v) for k, v in c.items()} for c in C.CLASSES],
         "nama": nama,
-        "sensores": [{k: s.get(k) for k in ("id", "nome", "lat", "lon", "pm", "pm_bruto", "a", "b", "ur", "t", "classe",
-                                            "valido", "motivo", "visto", "nama", "dist_nama_km", "sinal_chuva")} for s in sensores],
-        "atual": {"mediana": p0, "classe": C.classe_de(p0), "n_sensores": len(validos), "n_total": len(sensores),
-                  "tendencia_h": tend, "tendencia": tend_txt,
-                  "media24": media24, "classe24": C.classe_de(media24), "horas_media24": len(ult24)},
+        "sensores": [{k: s_.get(k) for k in ("id", "nome", "lat", "lon", "pm", "pm_bruto", "a", "b", "ur", "t", "classe",
+                                             "valido", "motivo", "visto", "nama", "dist_nama_km", "sinal_chuva", "entorno")}
+                     for s_ in sensores],
+        "atual": {"mediana": p0, "classe": C.classe_de(p0), "iqar": C.iqar(p0), "n_sensores": len(validos),
+                  "n_total": len(da_cidade), "tendencia_h": tend, "tendencia": tend_txt,
+                  "media24": media24, "classe24": C.classe_de(media24), "iqar24": C.iqar(media24), "horas_media24": len(ult24)},
         "historico": [{"t": h["t"], "mediana": h["mediana"], "n": h["n"]} for h in serie[-48:]],
         "meteo": {"agora": m_agora, "previsao": met_prev, **chuva,
-                  "fonte": "Open-Meteo (modelos globais), no ponto da estação NAMA"},
+                  "fonte": f"Open-Meteo (modelos globais), no ponto da estação {nama['nome']}"},
         "chuva_obs": {"agora": {k: v for k, v in reg_chuva.items() if k != "prox_prevista"},
                       "lavagem": lavagem, "efeito": efeito,
                       "metar": metar, "inmet_ativo": bool(inmet),
@@ -1067,13 +1214,14 @@ def main():
                                    for r in historico.get("chuva", []) if parse_iso(r["t"]) > h0 - timedelta(hours=24)],
                       "criterios": {"dT": C.SINAL_DT_C, "dUR": C.SINAL_DUR_PTS, "dPM": C.SINAL_DPM,
                                     "janela_h": C.LAVAGEM_JANELA_H, "tau_recuperacao_h": C.TAU_RECUPERACAO_H}},
-        "focos": {"municipios": munis,
+        "focos": {"municipios": munis, "fonte": fonte_focos,
                   "totais": {k: sum(m[k] for m in munis) for k in ("ativos", "recem_extintos", "provaveis_incendios")},
-                  "monitorbeta_gerado_em": mb_resumo.get("gerado_em"),
+                  "monitorbeta_gerado_em": mb_resumo.get("gerado_em") if eh_manaus else None,
                   "criterios": {"recem_extinto_h": C.RECEM_EXTINTO_H, "incendio_duracao_h": C.INCENDIO_DURACAO_H,
                                 "incendio_pixels": C.INCENDIO_PIXELS, "incendio_frp_mw": C.INCENDIO_FRP_MW},
                   "aneis_km": C.IFB_ANEIS_KM},
-        "modelo": {"versao": f"v0.4 · variante {C.MODELO_PUBLICADO} (fundo regional + fogo a barlavento + chuva prevista e observada)", **info,
+        "modelo": {"versao": f"v0.5 · variante {C.MODELO_PUBLICADO} (fundo regional + fogo a barlavento + chuva prevista e observada)", **info,
+                   "variantes_no_site": list(C.VARIANTES_NO_SITE),
                    "tem_925": any(l.get("v925") is not None for l in meteo),
                    "parametros": {"pm_base": C.PM_BASE, "tau_persist_h": C.TAU_PERSIST_H, "k_fogo_inicial": C.K_FOGO,
                                   "ifb_L_km": C.IFB_L_KM, "peso_925": C.VT_PESO_925, "sigma_ang": [C.SIGMA_ANG_MIN, C.SIGMA_ANG_MAX],
@@ -1083,21 +1231,25 @@ def main():
         "destaques": [p for p in previsao if p["h"] in C.DESTAQUES_H],
         "validacao": validacao,
     }
-    gravar_json("qualiar.json", saida)
+    gravar_json("qualiar.json", saida, pasta)
     pontos = {"type": "FeatureCollection", "features": [
         {"type": "Feature", "geometry": {"type": "Point", "coordinates": [f["lon"], f["lat"]]},
          "properties": {**{k: v for k, v in f.items() if k not in ("lat", "lon", "_contrib")},
                         "influencia": {str(int((parse_iso(t) - h0).total_seconds() // 3600)): round(c, 3)
                                        for t, c in f.get("_contrib", {}).items()}}}
         for f in focos if f["categoria"] != "extinto" or f.get("_contrib")]}
-    gravar_json("focos_pontos.geojson", pontos)
-    if limites:
-        gravar_json("limites.geojson", limites)
+    gravar_json("focos_pontos.geojson", pontos, pasta)
+    if limites and eh_manaus:
+        gravar_json("limites.geojson", limites, pasta)
     if not teste:
-        gravar_json("historico.json", historico)
-        gravar_json("validacao_log.json", log)
-    print(json.dumps({"status": status, "mediana": p0, "nama": nama["origem"],
-                      "destaques": [(p["h"], p["pm"], p["classe"]) for p in saida["destaques"]]}, ensure_ascii=False))
+        gravar_json("historico.json", historico, pasta)
+        gravar_json("validacao_log.json", log, pasta)
+    print(reg["id"], json.dumps({"status": status, "mediana": p0, "centro": nama["origem"],
+                                 "destaques": [(p["h"], p["pm"], p["classe"]) for p in saida["destaques"]]}, ensure_ascii=False))
+    return {"id": reg["id"], "nome": reg["nome"], "pasta": "data/" if eh_manaus else f"data/regioes/{reg['id']}/",
+            "centro": {"nome": nama["nome"], "lat": nama["lat"], "lon": nama["lon"]},
+            "mediana": p0, "classe": C.classe_de(p0), "media24": media24, "classe24": C.classe_de(media24),
+            "n_sensores": len(validos), "gerado_em": iso(agora)}
 
 
 if __name__ == "__main__":

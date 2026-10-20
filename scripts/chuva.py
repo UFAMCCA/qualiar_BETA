@@ -57,8 +57,11 @@ def interpretar_metar(wx: str | None, raw: str | None):
     return classe, mm, "; ".join(desc) or "sem chuva"
 
 
-def coletar_metar(http_json, iso, h0):
-    ids = ",".join(C.METAR_ESTACOES)
+def coletar_metar(http_json, iso, h0, estacoes=None):
+    estacoes = estacoes or C.METAR_ESTACOES
+    if not estacoes:
+        return []
+    ids = ",".join(estacoes)
     try:
         dados = http_json(C.METAR_URL.format(ids=ids), tentativas=2)
     except ValueError:      # resposta vazia: o serviço não tem boletim recente
@@ -66,12 +69,12 @@ def coletar_metar(http_json, iso, h0):
     por_est = {}
     for r in dados:
         est = r.get("icaoId")
-        if est not in C.METAR_ESTACOES or r.get("obsTime") is None:
+        if est not in estacoes or r.get("obsTime") is None:
             continue
         if est in por_est and por_est[est]["_ts"] >= r["obsTime"]:
             continue
         classe, mm, texto = interpretar_metar(r.get("wxString"), r.get("rawOb"))
-        por_est[est] = {"_ts": r["obsTime"], "estacao": est, **C.METAR_ESTACOES[est], "classe": classe, "mm": mm,
+        por_est[est] = {"_ts": r["obsTime"], "estacao": est, **estacoes[est], "classe": classe, "mm": mm,
                         "texto": texto, "bruto": r.get("rawOb"), "fumaca": "FU" in (r.get("wxString") or "").split(),
                         "visibilidade": r.get("visib")}
     from datetime import datetime, timezone
