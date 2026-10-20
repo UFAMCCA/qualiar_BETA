@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>QUALIAR-UFAM · Previsão da qualidade do ar em Manaus</title>
-<meta name="description" content="Qualidade do ar em Manaus agora e prevista para as próximas 24 horas, em quatro classes alinhadas ao IQAr/CONAMA. PCU UFAM e CCA UFAM.">
+<meta name="description" content="Qualidade do ar em Manaus e nas cidades com campus da UFAM, agora e prevista para as próximas 24 horas, nas cinco classes do IQAr/CONAMA. PCU UFAM e CCA UFAM.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -19,15 +19,18 @@
   </div>
   <div class="marca">
     <h1>QUALIAR-UFAM</h1>
-    <span>Qualidade do ar em Manaus · agora e nas próximas 24 horas</span>
+    <span data-cidade="Qualidade do ar em {cidade} · agora e nas próximas 24 horas">Qualidade do ar · agora e nas próximas 24 horas</span>
   </div>
+  <label class="sel-regiao"><span>Cidade</span>
+    <select id="sel-regiao" aria-label="Escolher a cidade"><option>Manaus</option></select>
+  </label>
   <div class="atualiz" id="atualiz"><span>Carregando dados…</span></div>
 </header>
 <div class="aviso" id="aviso" hidden></div>
 
 <section class="destaque" aria-labelledby="t-prev">
   <div class="agora-card" id="agora-card">
-    <span class="rotulo">Agora em Manaus</span>
+    <span class="rotulo" data-cidade="Agora em {cidade}">Agora</span>
     <div class="agora-valor"><b id="ag-valor" class="num">–</b><small>µg/m³ PM2,5</small></div>
     <div id="ag-classe"></div>
     <p class="nota" id="ag-detalhe"></p>
@@ -47,7 +50,7 @@
       <div class="contadores" id="ar-contadores"></div>
       <div class="tabela-rolagem">
         <table class="tabela-s" id="tab-sensores">
-          <thead><tr><th>Estação</th><th>PM2,5</th><th>Classe</th><th>Dist. NAMA</th></tr></thead>
+          <thead><tr><th>Estação</th><th>PM2,5</th><th>Classe</th><th>Dist. centro</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -68,7 +71,7 @@
       <p class="nota" id="vento-trajeto"></p>
       <div class="tabela-rolagem alta">
         <table class="tabela-s" id="tab-munis">
-          <thead><tr><th>Município</th><th title="focos ativos">Ativos</th><th title="extintos (estimado) há até 12 h">Recém-ext.</th><th title="focos ativos persistentes ou grandes">Prov. inc.</th><th title="distância do foco mais próximo à estação NAMA">Dist.</th><th title="parte da fumaça prevista que vem de cada município, no horizonte escolhido">Peso na fumaça</th></tr></thead>
+          <thead><tr><th>Município</th><th title="focos ativos">Ativos</th><th title="extintos (estimado) há até 12 h">Recém-ext.</th><th title="focos ativos persistentes ou grandes">Prov. inc.</th><th title="distância do foco mais próximo à estação central">Dist.</th><th title="parte da fumaça prevista que vem de cada município, no horizonte escolhido">Peso na fumaça</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -87,15 +90,15 @@
       <p class="nota" id="val-chuva" hidden></p>
       <h3 class="rotulo" id="t-variantes" hidden>Teste das variantes do modelo</h3>
       <div class="tabela-rolagem" id="val-variantes" hidden></div>
-      <p class="nota">Em cada célula: erro médio em µg/m³ e porcentagem de classe certa. F24 e F48: nível de fundo regional das últimas 24 h ou 48 h. F24P: F24 com o perfil horário aprendido dos últimos dias (metade da amplitude). CAMS: previsão do Copernicus, que modela o transporte regional de fumaça, ajustada ao nível medido pela PurpleAir. F24N: F24 com o fator de madrugada sobre o fogo dos 13 municípios. F24R: F24N mais a fumaça de focos distantes (INPE, fora dos 13 municípios), seguida por retrotrajetória de 60 h no vento a 925 hPa; no mapa, a linha laranja mostra o caminho do ar que chega agora. v0.3: modelo anterior. ★ = variante publicada; em negrito, a de menor erro em cada horizonte. No gráfico, as variantes em teste aparecem como linhas finas pontilhadas.</p>
+      <p class="nota">Em cada célula: erro médio em µg/m³ e porcentagem de classe certa. O site mostra as duas versões com melhor desempenho: F24 (publicada), que parte do nível de fundo regional das últimas 24 h e soma o fogo a barlavento dos municípios do entorno, e F24R, que acrescenta a fumaça de focos distantes do INPE, seguida por retrotrajetória de 60 h no vento a 925 hPa, e o reforço da descida da fumaça no começo da manhã. No mapa, a linha laranja mostra o caminho do ar que chega agora. As demais versões testadas continuam calculadas e registradas para a avaliação científica. ★ = versão publicada; em negrito, a de menor erro em cada horizonte.</p>
       <p class="nota">Cada previsão emitida fica registrada e é comparada com a mediana dos próprios sensores PurpleAir quando a hora chega. "Persistência" é o erro de repetir o valor do momento da previsão: o modelo só ajuda onde erra menos que ela.</p>
     </section>
 
     <section class="bloco" aria-labelledby="t-cls">
       <h2 id="t-cls">Classes de qualidade do ar</h2>
       <div id="classes-lista"></div>
-      <p class="nota">Faixas do IQAr para PM2,5 (orientação técnica do MMA, 2025) e Resolução CONAMA nº 506/2024. As classes Muito Ruim e Péssima foram unidas, porque a recomendação é a mesma. A classe oficial usa a média de 24 h; a classe horária é indicativa.</p>
-      <p class="nota">Um trabalho do PCU UFAM e do CCA UFAM. Focos: <a href="https://ufamcca.github.io/MonitorBETA/" target="_blank" rel="noopener">MonitorBETA</a> (INPE e NASA FIRMS). PM2,5: PurpleAir. Tempo: Open-Meteo.</p>
+      <p class="nota">Faixas do IQAr para PM2,5 (orientação técnica do MMA, 2025) e Resolução CONAMA nº 506/2024. Cinco classes, cada uma com sua faixa de IQAr. A classe oficial usa a média de 24 h; a classe horária é indicativa. Acima de 300 µg/m³ (IQAr 400) o índice sai da tabela.</p>
+      <p class="nota">Um trabalho do PCU UFAM e do CCA UFAM. Focos: <a href="https://ufamcca.github.io/MonitorBETA/" target="_blank" rel="noopener">MonitorBETA</a> (Manaus, INPE e NASA FIRMS) e INPE BDQueimadas (demais cidades e fumaça distante). PM2,5: PurpleAir. Tempo: Open-Meteo.</p>
     </section>
   </aside>
   <div class="mapa-wrap">
@@ -103,7 +106,7 @@
       <button type="button" id="ver-cidade" aria-pressed="true">Cidade</button>
       <button type="button" id="ver-regiao" aria-pressed="false">Região e focos</button>
     </div>
-    <div id="mapa" role="region" aria-label="Mapa da qualidade do ar em Manaus"></div>
+    <div id="mapa" role="region" aria-label="Mapa da qualidade do ar na cidade escolhida"></div>
   </div>
 </main>
 
