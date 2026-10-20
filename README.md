@@ -1,6 +1,6 @@
-# QUALIAR-UFAM · Qualidade do ar em Manaus, agora e nas próximas 24 horas
+# QUALIAR-UFAM · Qualidade do ar, agora e nas próximas 24 horas
 
-Site estático (GitHub Pages) do PCU UFAM e do CCA UFAM. Mostra a qualidade do ar medida pelas estações PurpleAir de Manaus, nas cinco classes do IQAr (CONAMA 506/2024), e a previsão hora a hora para as próximas 24 horas. Os focos de calor vêm do [MonitorBETA](https://ufamcca.github.io/MonitorBETA/), lidos do JSON que ele já publica.
+Site estático (GitHub Pages) do PCU UFAM e do CCA UFAM. Mostra a qualidade do ar medida pelas estações PurpleAir de Manaus e municipios onde a UFAM tem CAMPI, nas cinco classes do IQAr (CONAMA 506/2024), e a previsão hora a hora para as próximas 24 horas. Os focos de calor vêm do [MonitorBETA](https://ufamcca.github.io/MonitorBETA/), lidos do JSON que ele já publica. Dados de queimadas em eventos ativos vem do painel do fogo do CENSIPAM.
 
 ## Fontes e custo
 
@@ -11,7 +11,7 @@ Site estático (GitHub Pages) do PCU UFAM e do CCA UFAM. Mostra a qualidade do a
 | Chuva observada | METAR dos aeroportos SBEG e SBMN ([aviationweather.gov](https://aviationweather.gov/data/api/)) e assinatura de chuva nos sensores PurpleAir; pluviômetro do INMET opcional | METAR e sensores: gratuito, sem chave. INMET: token pedido ao INMET, cadastrado como `INMET_TOKEN` (leitor não testado aqui) |
 | Focos ativos, recém-extintos e limites municipais | MonitorBETA (INPE BDQueimadas e NASA FIRMS) | Gratuito; já é coletado pelo grupo |
 
-O aplicativo Selva (UEA) não tem API pública documentada; se a UEA liberar acesso, ele entra como mais uma fonte de PM2,5 no mesmo formato dos sensores.
+
 
 ## Publicar (uma vez)
 
@@ -21,8 +21,6 @@ O aplicativo Selva (UEA) não tem API pública documentada; se a UEA liberar ace
 4. Em **Settings → Pages**, escolha *Deploy from a branch*, `main`, pasta `/docs`. O site fica em `https://ufamcca.github.io/QUALIAR/`.
 5. Em **Actions → QUALIAR-UFAM (a cada hora) → Run workflow**, marque *semear* na primeira execução. Ela baixa as últimas 24 h de médias horárias de cada sensor, para o site já abrir com tendência e média de 24 h. Depois a coleta roda sozinha no minuto 12 de cada hora.
 6. Confira o resultado: o topo do site mostra o estado de cada fonte (PurpleAir, Open-Meteo, METAR, MonitorBETA, INMET). Até a primeira coleta, a página avisa que ainda não há dados.
-
-Os logos no topo são provisórios (`docs/img/logo-pcu.svg` e `docs/img/logo-cca.svg`); para trocar, substitua os dois arquivos mantendo os nomes.
 
 ## Cidades com campus (seletor no topo do site)
 
@@ -82,7 +80,7 @@ Se o sensor for privado na PurpleAir, a chave de leitura não o enxerga; nesse c
 7. **Classes.** Valor horário (indicativo) e média móvel de 24 h combinando horas observadas e previstas (classe oficial do IQAr).
 8. **Validação.** As previsões de +1, +3, +6, +12 e +24 h ficam em `docs/data/validacao_log.json`. Quando a hora chega, são comparadas com a mediana observada nos próprios PurpleAir: erro médio, viés, acerto de classe e erro da persistência.
 
-## Calibração (próximo passo)
+## Calibração (em curso)
 
 Os coeficientes do modelo v0 (`PM_BASE`, `TAU_PERSIST_H`, `K_FOGO`, `IFB_L_KM`, `IFB_TAU_H`, `LAMBDA_CHUVA`) são valores iniciais de bom senso físico, todos em `scripts/config.py`. Com algumas semanas de `historico.json` e `validacao_log.json`, eles devem ser ajustados pelo erro contra a persistência. Com uma estação seca inteira, o modelo v0 é substituído pelo LightGBM multi-horizonte descrito no artigo, mantendo o mesmo arquivo de saída.
 
