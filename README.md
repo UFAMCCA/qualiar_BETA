@@ -1,12 +1,12 @@
-# QUALIAR-UFAM · Qualidade do ar em Manaus, agora e nas próximas 24 horas
+# QUALIAR-UFAM · Qualidade do ar nos municípios dos Campi da UFAM, agora e nas próximas 24 horas
 
-Site estático (GitHub Pages) do CCA UFAM. Mostra a qualidade do ar medida pelas estações PurpleAir de Manaus, em quatro classes alinhadas ao IQAr/CONAMA 506/2024, e a previsão hora a hora para as próximas 24 horas. Os focos de calor vêm do [MonitorBETA](https://ufamcca.github.io/MonitorBETA/), lidos do JSON que ele já publica.
+Site estático (GitHub Pages) do CCA UFAM. Mostra a qualidade do ar medida pelas estações PurpleAir de cada cidade, em classes alinhadas ao IQAr/CONAMA 506/2024, e a previsão hora a hora para as próximas 24 horas. Os focos de calor vêm do [MonitorBETA](https://ufamcca.github.io/MonitorBETA/), lidos do JSON que ele já publica.
 
 ## Fontes e custo
 
 | Dado | Fonte | Custo de acesso |
 |---|---|---|
-| PM2,5, umidade e temperatura dos sensores | API da PurpleAir, uma chamada por hora para todos os sensores da área urbana | Chave gratuita; a leitura consome "pontos" da conta. Uma chamada horária com 9 campos é o modo mais barato. O histórico horário (`--semear`) faz uma chamada por sensor e deve ser usado só na primeira vez |
+| PM2,5, umidade e temperatura dos sensores | API da PurpleAir, uma chamada por hora para todos os sensores da área urbana e proximidades | Chave gratuita; a leitura consome "pontos" da conta. Uma chamada horária com 9 campos é o modo mais barato. O histórico horário (`--semear`) faz uma chamada por sensor e deve ser usado só na primeira vez |
 | Temperatura, umidade, chuva e vento observados e previstos | [Open-Meteo](https://open-meteo.com), no ponto da estação NAMA | Gratuito, sem chave, para uso não comercial |
 | Chuva observada | METAR dos aeroportos SBEG e SBMN ([aviationweather.gov](https://aviationweather.gov/data/api/)) e assinatura de chuva nos sensores PurpleAir; pluviômetro do INMET opcional | METAR e sensores: gratuito, sem chave. INMET: token pedido ao INMET, cadastrado como `INMET_TOKEN` (leitor não testado aqui) |
 | Focos ativos, recém-extintos e limites municipais | MonitorBETA (INPE BDQueimadas e NASA FIRMS) | Gratuito; já é coletado pelo grupo |
@@ -20,9 +20,9 @@ Site estático (GitHub Pages) do CCA UFAM. Mostra a qualidade do ar medida pelas
 5. Em **Actions → QUALIAR-UFAM (a cada hora) → Run workflow**, marque *semear* na primeira execução. Ela baixa as últimas 24 h de médias horárias de cada sensor, para o site já abrir com tendência e média de 24 h. Depois a coleta roda sozinha no minuto 12 de cada hora.
 6. Confira o resultado: o topo do site mostra o estado de cada fonte (PurpleAir, Open-Meteo, METAR, MonitorBETA, INMET). Até a primeira coleta, a página avisa que ainda não há dados.
 
-## Estação MIT_NAMA_UFAM
+## Estações Centrais
 
-A estação PurpleAir MIT_NAMA_UFAM é o centro para distâncias e direções até os focos, os anéis de 50, 150 e 300 km e o ponto da meteorologia. O mapa da PurpleAir não mostra o número do sensor, mas a API devolve nome, número e posição de cada sensor na mesma resposta. O coletor procura o nome exato `MIT_NAMA_UFAM` (definido em `NAMA_NOME`, `scripts/config.py`) e guarda o número e a posição em `docs/data/historico.json`. Se numa hora o sensor não enviar dados, usa a última posição conhecida; só sem nenhum registro usa as coordenadas aproximadas do campus (`NAMA_LAT_PADRAO`, `NAMA_LON_PADRAO`). O site mostra um aviso nos dois casos. O número encontrado aparece no topo do método, no site, e em `docs/data/qualiar.json` (campo `nama.id`).
+Em Manaus a estação PurpleAir MIT_NAMA_UFAM é o centro para distâncias e direções até os focos, os anéis de 50, 150 e 300 km e o ponto da meteorologia. Para os demais, cada município tem sua própria estação Central. O mapa da PurpleAir não mostra o número do sensor, mas a API devolve nome, número e posição de cada sensor na mesma resposta. O coletor procura o nome exato, por exemplo, `MIT_NAMA_UFAM` (definido em `NAMA_NOME`, `scripts/config.py`) e guarda o número e a posição em `docs/data/historico.json`. Se numa hora o sensor não enviar dados, usa a última posição conhecida; só sem nenhum registro usa as coordenadas aproximadas do campus (`NAMA_LAT_PADRAO`, `NAMA_LON_PADRAO`). O site mostra um aviso nos dois casos. O número encontrado aparece no topo do método, no site, e em `docs/data/qualiar.json` (campo `nama.id`).
 
 Se o sensor for privado na PurpleAir, a chave de leitura não o enxerga; nesse caso é preciso que o dono o torne público ou compartilhe a chave de leitura dele.
 
