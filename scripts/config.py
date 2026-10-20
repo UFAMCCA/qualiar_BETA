@@ -264,8 +264,10 @@ TAU_CHUVA_H = 3.0             # o efeito de uma chuva prevista passa em ~3 h (n�
 #   "F24N" = F24 + fator de madrugada sobre o fogo local (sem fumaça distante)
 #   "F24R" = F24 + fumaça distante (trajetória de 60 h sobre os focos do INPE) + fator de madrugada
 #   "F24U" = F24R + trajetórias em 925 e 850 hPa + ventilação + ilha de calor
+#   "F24L" = F24U com a camada limite corrigida (Dias-Júnior et al., 2022): diluição da
+#            fumaça distante e ventilação pela camada corrigida, alfa calibrado
 MODELO_PUBLICADO = "F24"
-VARIANTES = ("F24", "F48", "F24P", "CAMS", "F24N", "F24R", "F24U", "v0.3")
+VARIANTES = ("F24", "F48", "F24P", "CAMS", "F24N", "F24R", "F24U", "F24L", "v0.3")
 VARIANTES_NO_GRAFICO = ("F24R",)
 
 # Perfil horário (F24P): razão entre a mediana de cada hora e a média das 24 h
@@ -345,6 +347,43 @@ ILHA_DIAS = 14
 ILHA_FATOR_POR_GRAU = 0.15     # cada 1 °C de ilha de calor acima do normal alonga tau em 15%, à noite
 ILHA_FATOR_MAX = 1.6
 ILHA_HORAS_NOITE = (19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6, 7)
+
+# ---------------------------------------------------------------- F24L (em teste desde 20/10/2026)
+# Camada limite corrigida pelas medidas da Amazônia Central:
+#   Dias-Júnior et al. (2022, Remote Sensing 14, 4561): o reanálise erra a altura de dia
+#     por um fator constante e desaba cedo demais no fim da tarde; correção (eq. 2):
+#       12-17 UTC (08h-13h): (1 + alfa) x altura do modelo
+#       18-23 UTC (14h-19h): (1 + alfa) x máximo do dia x sen[pi (t - 12) / 12]
+#     alfa = -0,12 na floresta (ATTO) e +0,15 a +0,30 no pasto (T3). À noite o modelo não
+#     acompanha a medida hora a hora; a camada noturna estável tem ~250 m e o que o
+#     ceilômetro vê a 400-500 m é a camada residual.
+#   Souza et al. (2023, Ciência e Natura 45, e80266): ciclo médio na ATTO; mínimo às
+#     10-11 UTC, máximo de 1.600-1.700 m na seca às 19-20 UTC.
+# Fator de correção por município: alfa é calibrado em cada cidade com os seus próprios
+# sensores e guardado no historico.json dela (estado.alfa_camada). Parte de 0, ou do valor
+# "alfa_camada" da cidade em REGIOES, se houver (região diferente da ATTO e do T3).
+CAMADA_ALFA_INICIAL = 0.0
+CAMADA_ALFA_MIN, CAMADA_ALFA_MAX, CAMADA_ALFA_PASSO = -0.30, 0.50, 0.05
+CAMADA_ALFA_PENALIDADE = 0.10      # o erro precisa cair mais que 10% x alfa² para se afastar de 0
+CAMADA_ALFA_SUAVE = 0.3            # alfa novo = 70% do anterior + 30% do melhor desta rodada
+CAMADA_NOITE_M = 150.0             # camada noturna estável fixa, 00-11 UTC = 20h-07h (especialista, 20/10/2026)
+# Curva da ATTO na seca (Souza et al., 2023), usada só se o Open-Meteo não der a altura de dia.
+CAMADA_CLIMA_UTC = {12: 550, 13: 750, 14: 1000, 15: 1200, 16: 1400, 17: 1550}
+# Alturas (m acima do solo) usadas para decidir que ventos estão dentro da camada na ventilação.
+NIVEIS_ALTURA_M = {"950": 500.0, "925": 800.0, "850": 1500.0}
+# Fumaça distante no chão: IFR em duas alturas (como a F24U) x fator de madrugada x diluição
+# pela camada corrigida, (DILUICAO_REF_M / camada) ^ DILUICAO_EXPOENTE. Na série de 14 a 20/10
+# a anomalia de PM2,5 é máxima às 05-08h e mínima à tarde, quando a camada é funda: a
+# fumaça já está na camada rasa da madrugada e se dilui quando ela cresce. A hipótese de que
+# a fumaça só chega ao chão quando a camada alcança a altura de transporte não se sustentou
+# (correlação ~0 com a anomalia, contra 0,80 desta forma; 145 h, dentro da amostra).
+DILUICAO_REF_M = 800.0
+DILUICAO_EXPOENTE = 0.25
+# À noite a camada é fixa (150 m) e portanto sempre estável: o fator de madrugada da F24L
+# depende só da hora e do vento a ~800 m (o critério "camada do modelo < 300 m" da F24R era
+# verdadeiro em quase todas as noites e saiu). Diferença de temperatura potencial e número de
+# Richardson entre 10 m e 950 hPa ficam registrados no JSON para testar depois.
+P_SUPERFICIE_HPA = 1008.0          # pressão típica em Manaus, para a temperatura potencial
 
 HORIZONTES = list(range(1, 25))
 DESTAQUES_H = [1, 3, 6, 12, 24]

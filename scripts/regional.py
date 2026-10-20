@@ -327,12 +327,13 @@ def _rumo(lat1, lon1, lat2, lon2):
 
 # ================================================================ vento a 925 hPa na região
 class Campo:
-    """Vento a 925 hPa (~800 m) e a 850 hPa (~1.500 m) e chuva numa grade de pontos, hora a hora."""
+    """Vento a 950 hPa (~500 m), 925 hPa (~800 m) e 850 hPa (~1.500 m) e chuva numa grade
+    de pontos, hora a hora."""
 
-    NIVEIS = ("925", "850")
+    NIVEIS = ("950", "925", "850")
 
-    def __init__(self, pontos, pontos850=None):
-        self.niveis = {"925": pontos, "850": pontos850 or []}   # [(lat, lon, {t: (u, v, mm)})]
+    def __init__(self, pontos, pontos850=None, pontos950=None):
+        self.niveis = {"925": pontos, "850": pontos850 or [], "950": pontos950 or []}   # [(lat, lon, {t: (u, v, mm)})]
         self.pontos = pontos
 
     @classmethod
@@ -340,15 +341,16 @@ class Campo:
         lats = [la for la in C.REG_GRADE_LAT for _ in C.REG_GRADE_LON]
         lons = [lo for _ in C.REG_GRADE_LAT for lo in C.REG_GRADE_LON]
         q = {"latitude": ",".join(str(x) for x in lats), "longitude": ",".join(str(x) for x in lons),
-             "hourly": "wind_speed_925hPa,wind_direction_925hPa,wind_speed_850hPa,wind_direction_850hPa,precipitation",
+             "hourly": "wind_speed_925hPa,wind_direction_925hPa,wind_speed_850hPa,wind_direction_850hPa,"
+                       "wind_speed_950hPa,wind_direction_950hPa,precipitation",
              "wind_speed_unit": "ms", "timezone": "GMT", "timeformat": "unixtime", "past_days": 3, "forecast_days": 2}
         d = http_json("https://api.open-meteo.com/v1/forecast?" + urllib.parse.urlencode(q))
         if isinstance(d, dict):
             d = [d]
-        por = {"925": [], "850": []}
+        por = {"925": [], "850": [], "950": []}
         for la, lo, p in zip(lats, lons, d):
             h = p["hourly"]
-            for nv in ("925", "850"):
+            for nv in ("925", "850", "950"):
                 vs, ds = h.get(f"wind_speed_{nv}hPa") or [], h.get(f"wind_direction_{nv}hPa") or []
                 s_ = {}
                 for ts, vel, dire, mm in zip(h["time"], vs, ds, h["precipitation"]):
@@ -357,7 +359,7 @@ class Campo:
                     r = math.radians(dire)
                     s_[datetime.fromtimestamp(ts, UTC)] = (-vel * math.sin(r), -vel * math.cos(r), mm or 0.0)
                 por[nv].append((la, lo, s_))
-        return cls(por["925"], por["850"])
+        return cls(por["925"], por["850"], por["950"] if any(s_ for _, _, s_ in por["950"]) else [])
 
     def em(self, lat, lon, t, nivel="925"):
         """Vento (u, v) em m/s e chuva em mm no ponto e hora, por inverso do quadrado da distância."""
@@ -525,6 +527,18 @@ def preencher_historico(hist, campo, idx, agora, nama, met):
                      "ifr_u": None if v850 is None else round(C.PESO_NIVEL_925 * v + (1 - C.PESO_NIVEL_925) * v850, 2),
                      "noite": round(f, 2),
                      "uf": {u: round(x / v, 2) for u, x in sorted(uf.items(), key=lambda z: -z[1])[:4]} if v > 0 else {}})
+    # alturas que entraram depois (950 hPa desde 20/10/2026; 850 hPa em linhas antigas): completa
+    # as horas que o campo de vento ainda cobre
+    for r in hist:
+        t = parse_iso(r["t"])
+        if t < h0 - timedelta(hours=C.REG_TRAJ_H):
+            continue
+        for nv, chave in (("950", "ifr950"), ("850", "ifr850")):
+            if r.get(chave) is not None or not campo.niveis.get(nv):
+                continue
+            if campo.em(nama["lat"], nama["lon"], t, nv) is None:
+                continue
+            r[chave] = round(ifr(trajetoria(campo, t, nama["lat"], nama["lon"], nivel=nv), idx, t)[0], 2)
     corte = iso(h0 - timedelta(hours=C.REG_GUARDA_H * 2))
     hist[:] = sorted((r for r in hist if r["t"] >= corte), key=lambda r: r["t"])
 

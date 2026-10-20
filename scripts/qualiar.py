@@ -31,6 +31,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import config as C  # noqa: E402
 import chuva as R  # noqa: E402
 import regional as RG  # noqa: E402
+import camada as CL  # noqa: E402
 
 TZ = ZoneInfo(C.FUSO)
 UTC = timezone.utc
@@ -264,10 +265,13 @@ def coletar_meteo(lat, lon):
             "temp": h["temperature_2m"][i], "ur": h["relative_humidity_2m"][i],
             "chuva": h["precipitation"][i], "prob": h["precipitation_probability"][i],
             "vento": h["wind_speed_10m"][i], "dir": h["wind_direction_10m"][i], "blh": None, "v925": None, "d925": None, "v850": None, "d850": None,
+            "v950": None, "d950": None, "t925": None, "t950": None,
         })
     opcionais = [("boundary_layer_height", ["blh"]),
                  ("wind_speed_925hPa,wind_direction_925hPa", ["v925", "d925"]),
-                 ("wind_speed_850hPa,wind_direction_850hPa", ["v850", "d850"])]
+                 ("wind_speed_850hPa,wind_direction_850hPa", ["v850", "d850"]),
+                 ("wind_speed_950hPa,wind_direction_950hPa", ["v950", "d950"]),
+                 ("temperature_925hPa,temperature_950hPa", ["t925", "t950"])]
     for campos, chaves in opcionais:  # nem todo modelo fornece; opcional
         try:
             q2 = {k: v for k, v in q.items() if k != "hourly"}
@@ -729,6 +733,9 @@ def prever(agora, p0, historico, meteo, focos, lavagem=None, chuva_obs=None, cam
     prev = []
     ilha = ilha_de_calor(historico, met, h0)
     soma_inv_tau = 0.0     # decaimento integrado da F24U (tau varia com a ventilação e a ilha de calor)
+    soma_inv_tau_l = 0.0   # idem, F24L (ventilação com a camada corrigida)
+    alfa = (regional or {}).get("alfa", C.CAMADA_ALFA_INICIAL)
+    perfil_camada = []
     for h in C.HORIZONTES:
         t = h0 + timedelta(hours=h)
         m = met.get(iso(t))
@@ -790,6 +797,23 @@ def prever(agora, p0, historico, meteo, focos, lavagem=None, chuva_obs=None, cam
         fum_u = (fogo_local + k_u * ifr_u) * noite
         exc_u = pulso(e0, dec_u, fundo[24], fum_u) + tend_f + recup
         variantes["F24U"] = round(max(1.0, C.PM_BASE + max(0.0, exc_u) * math.exp(-C.LAMBDA_CHUVA * chuva_ef)), 1) if regional else variantes["F24R"]
+        # F24L: camada limite corrigida (Dias-Júnior et al., 2022): a fumaça distante entra
+        # diluída pela camada corrigida e a ventilação usa a mesma camada
+        zc = CL.camada_corrigida(met, t, alfa)
+        fv_l = CL.fator_ventilacao(m, zc)
+        soma_inv_tau_l += 1.0 / (C.TAU_PERSIST_H * fv_l * fi)
+        dec_l = math.exp(-soma_inv_tau_l)
+        noite_l = CL.fator_noite(met, t)
+        x_l = CL.termo_distante(ifr_u, noite_l, zc)
+        k_l = (regional or {}).get("k_l", k_reg)
+        fum_l = fogo_local * noite_l + k_l * x_l
+        exc_l = pulso(e0, dec_l, fundo[24], fum_l) + tend_f + recup
+        variantes["F24L"] = round(max(1.0, C.PM_BASE + max(0.0, exc_l) * math.exp(-C.LAMBDA_CHUVA * chuva_ef)), 1) if regional else variantes["F24R"]
+        perfil_camada.append({"t": iso(t), "camada_m": round(zc), "modelo_m": None if not m or m.get("blh") is None else round(m["blh"]),
+                              "diluicao": round(CL.diluicao(zc), 2), "noite": round(noite_l, 2),
+                              "fator_ventilacao": round(fv_l, 2), "fumaca_distante_ug": round(k_l * x_l, 1),
+                              "dtheta_k": None if CL.dtheta(m)[0] is None else round(CL.dtheta(m)[0], 1),
+                              "richardson": None if CL.richardson(m) is None else round(CL.richardson(m), 2)})
         pm = variantes[C.MODELO_PUBLICADO]
         sig = C.SIGMA_BASE + C.SIGMA_POR_RAIZ_H * math.sqrt(h)
         prev.append({
@@ -848,6 +872,14 @@ def prever(agora, p0, historico, meteo, focos, lavagem=None, chuva_obs=None, cam
                 "k_reg": round(regional["k_reg"], 3), "k_reg_horas": regional["n_cal"],
                 "celulas": regional["celulas"], "trajetoria": regional["traj"],
                 "fumaca_agora_ug": round(regional["k_reg"] * regional["ifr"].get(h0, (0.0, {}))[0], 1)},
+            "camada": {"alfa": round(alfa, 3), "alfa_rodada": (regional or {}).get("alfa_rodada"),
+                       "k_l": None if not regional else round(regional.get("k_l", 0.0), 3),
+                       "k_l_horas": (regional or {}).get("n_cal_l"),
+                       "agora_m": round(CL.camada_corrigida(met, h0, alfa)),
+                       "modelo_agora_m": None if not m_agora or m_agora.get("blh") is None else round(m_agora["blh"]),
+                       "dtheta_agora_k": None if CL.dtheta(m_agora)[0] is None else round(CL.dtheta(m_agora)[0], 1),
+                       "richardson_agora": None if CL.richardson(m_agora) is None else round(CL.richardson(m_agora), 2),
+                       "horas": perfil_camada},
             "risco_matinal": risco_matinal(prev),
             "tendencia_h": round(tend, 2), "fator_diurno_agora": round(d0, 2)}
     return prev, info
@@ -1333,7 +1365,14 @@ def processar_regiao(reg, a, agora, h0, teste, status, chave, purpleair, amostra
             k_u, n_cal_u = RG.calibrar_k(hist_reg, serie_obs, h0, C.PM_BASE, chave="ifr_u")
             if n_cal_u < C.K_REG_MIN_HORAS:
                 k_u = k_reg          # até ter horas com as duas alturas, usa o peso da F24R
+            est = historico.setdefault("estado", {})
+            alfa_ant = est.get("alfa_camada", reg.get("alfa_camada", C.CAMADA_ALFA_INICIAL))
+            alfa, k_l, n_cal_l, alfa_rodada = CL.calibrar(hist_reg, met, serie_obs, h0, C.PM_BASE, alfa_ant)
+            if n_cal_l < C.K_REG_MIN_HORAS:
+                k_l = k_reg
+            est["alfa_camada"] = alfa
             regional = {"ifr": ifr_map, "ifr850": ifr850_map, "k_u": k_u, "n_cal_u": n_cal_u,
+                        "alfa": alfa, "alfa_rodada": alfa_rodada, "k_l": k_l, "n_cal_l": n_cal_l,
                         "traj": traj0, "k_reg": k_reg, "n_cal": n_cal,
                         "celulas": sum(len(v) for kk, b in idx.items() if kk != "_memo" for v in b.values())}
         except Exception as e:
