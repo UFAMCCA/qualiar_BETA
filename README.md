@@ -1,36 +1,42 @@
-# QUALIAR-UFAM · Qualidade do ar nos municípios dos Campi da UFAM, agora e nas próximas 24 horas
+# QUALIAR-UFAM · Qualidade do ar em Manaus, agora e nas próximas 24 horas
 
-Site estático (GitHub Pages) do CCA UFAM. Mostra a qualidade do ar medida pelas estações PurpleAir de cada cidade, em classes alinhadas ao IQAr/CONAMA 506/2024, e a previsão hora a hora para as próximas 24 horas. Os focos de calor vêm do [MonitorBETA](https://ufamcca.github.io/MonitorBETA/), lidos do JSON que ele já publica.
+Site estático (GitHub Pages) do PCU UFAM e do CCA UFAM. Mostra a qualidade do ar medida pelas estações PurpleAir de Manaus, nas cinco classes do IQAr (CONAMA 506/2024), e a previsão hora a hora para as próximas 24 horas. Os focos de calor vêm do [MonitorBETA](https://ufamcca.github.io/MonitorBETA/), lidos do JSON que ele já publica.
 
 ## Fontes e custo
 
 | Dado | Fonte | Custo de acesso |
 |---|---|---|
-| PM2,5, umidade e temperatura dos sensores | API da PurpleAir, uma chamada por hora para todos os sensores da área urbana e proximidades | Chave gratuita; a leitura consome "pontos" da conta. Uma chamada horária com 9 campos é o modo mais barato. O histórico horário (`--semear`) faz uma chamada por sensor e deve ser usado só na primeira vez |
+| PM2,5, umidade e temperatura dos sensores | API da PurpleAir, uma chamada por hora para todos os sensores da área urbana | Chave gratuita; a leitura consome "pontos" da conta. Uma chamada horária com 9 campos é o modo mais barato. O histórico horário (`--semear`) faz uma chamada por sensor e deve ser usado só na primeira vez |
 | Temperatura, umidade, chuva e vento observados e previstos | [Open-Meteo](https://open-meteo.com), no ponto da estação NAMA | Gratuito, sem chave, para uso não comercial |
 | Chuva observada | METAR dos aeroportos SBEG e SBMN ([aviationweather.gov](https://aviationweather.gov/data/api/)) e assinatura de chuva nos sensores PurpleAir; pluviômetro do INMET opcional | METAR e sensores: gratuito, sem chave. INMET: token pedido ao INMET, cadastrado como `INMET_TOKEN` (leitor não testado aqui) |
 | Focos ativos, recém-extintos e limites municipais | MonitorBETA (INPE BDQueimadas e NASA FIRMS) | Gratuito; já é coletado pelo grupo |
 
+O aplicativo Selva (UEA) não tem API pública documentada; se a UEA liberar acesso, ele entra como mais uma fonte de PM2,5 no mesmo formato dos sensores.
+
 ## Publicar (uma vez)
 
-1. Crie um repositório e envie o conteúdo desta pasta para a branch `main`, incluindo a pasta oculta `.github`.
-2. Em **Settings → Secrets and variables → Actions**, cadastre a chave de leitura da PurpleAir como `PURPLEAIR_API_KEY`.Caso haja token do INMET, cadastre-o como `INMET_TOKEN`; sem ele, a coleta funciona e só pula o pluviômetro.
+1. Crie um repositório vazio (por exemplo `ufamcca/QUALIAR`) e envie o conteúdo desta pasta para a branch `main`, incluindo a pasta oculta `.github`.
+2. Em **Settings → Secrets and variables → Actions**, cadastre a chave de leitura da PurpleAir como `PURPLEAIR_API_KEY`. Quando o token do INMET chegar, cadastre-o como `INMET_TOKEN`; sem ele, a coleta funciona e só pula o pluviômetro.
 3. Em **Settings → Actions → General → Workflow permissions**, marque *Read and write permissions* (a coleta grava os dados no próprio repositório).
-4. Em **Settings → Pages**, escolha *Deploy from a branch*, `main`, pasta `/docs`. O site fica em `https://ufamcca.github.io/QUALIAR_BETA/`.
+4. Em **Settings → Pages**, escolha *Deploy from a branch*, `main`, pasta `/docs`. O site fica em `https://ufamcca.github.io/QUALIAR/`.
 5. Em **Actions → QUALIAR-UFAM (a cada hora) → Run workflow**, marque *semear* na primeira execução. Ela baixa as últimas 24 h de médias horárias de cada sensor, para o site já abrir com tendência e média de 24 h. Depois a coleta roda sozinha no minuto 12 de cada hora.
 6. Confira o resultado: o topo do site mostra o estado de cada fonte (PurpleAir, Open-Meteo, METAR, MonitorBETA, INMET). Até a primeira coleta, a página avisa que ainda não há dados.
 
+Os logos no topo são provisórios (`docs/img/logo-pcu.svg` e `docs/img/logo-cca.svg`); para trocar, substitua os dois arquivos mantendo os nomes.
+
 ## Cidades com campus (seletor no topo do site)
+
 Além de Manaus, o coletor calcula a qualidade do ar e a previsão para Itacoatiara, Parintins, Humaitá, Coari e Benjamin Constant. Cada cidade tem, em `scripts/config.py` (`REGIOES`):
-a estação central (nome exato na PurpleAir) e uma caixa com os sensores que entram na mediana da cidade;
--estações de referência do entorno, mostradas mas fora da mediana (a torre ATTO, para Itacoatiara e Parintins);
--a lista de municípios vizinhos. Os focos vêm direto do INPE e são atribuídos ao município pelo limite do IBGE, baixado uma vez e guardado em `docs/data/regioes/<cidade>/limites.geojson`. Em Benjamin Constant, focos a oeste da fronteira contam como "Colômbia e Peru".
--Os dados de cada cidade ficam em `docs/data/regioes/<cidade>/`; os de Manaus continuam em `docs/data/`. O índice `docs/data/regioes.json` alimenta o seletor. Na primeira rodada de uma cidade, o coletor baixa 24 h de histórico dos sensores dela (uma vez). Cada cidade custa uma consulta a mais por hora à PurpleAir.
 
+- a estação central (nome exato na PurpleAir) e uma caixa com os sensores que entram na mediana da cidade;
+- estações de referência do entorno, mostradas mas fora da mediana (a torre ATTO, para Itacoatiara e Parintins);
+- a lista de municípios vizinhos. Os focos vêm direto do INPE e são atribuídos ao município pelo limite do IBGE, baixado uma vez e guardado em `docs/data/regioes/<cidade>/limites.geojson`. Em Benjamin Constant, focos a oeste da fronteira contam como "Colômbia e Peru".
 
-## Estações Centrais
+Os dados de cada cidade ficam em `docs/data/regioes/<cidade>/`; os de Manaus continuam em `docs/data/`. O índice `docs/data/regioes.json` alimenta o seletor. Na primeira rodada de uma cidade, o coletor baixa 24 h de histórico dos sensores dela (uma vez). Cada cidade custa uma consulta a mais por hora à PurpleAir.
 
-Em Manaus a estação PurpleAir MIT_NAMA_UFAM é o centro para distâncias e direções até os focos, os anéis de 50, 150 e 300 km e o ponto da meteorologia. Para os demais, cada município tem sua própria estação Central. O mapa da PurpleAir não mostra o número do sensor, mas a API devolve nome, número e posição de cada sensor na mesma resposta. O coletor procura o nome exato, por exemplo, `MIT_NAMA_UFAM` (definido em `NAMA_NOME`, `scripts/config.py`) e guarda o número e a posição em `docs/data/historico.json`. Se numa hora o sensor não enviar dados, usa a última posição conhecida; só sem nenhum registro usa as coordenadas aproximadas do campus (`NAMA_LAT_PADRAO`, `NAMA_LON_PADRAO`). O site mostra um aviso nos dois casos. O número encontrado aparece no topo do método, no site, e em `docs/data/qualiar.json` (campo `nama.id`).
+## Estação MIT_NAMA_UFAM (centro do método)
+
+A estação PurpleAir da UFAM é o centro para distâncias e direções até os focos, os anéis de 50, 150 e 300 km e o ponto da meteorologia. O mapa da PurpleAir não mostra o número do sensor, mas a API devolve nome, número e posição de cada sensor na mesma resposta. O coletor procura o nome exato `MIT_NAMA_UFAM` (definido em `NAMA_NOME`, `scripts/config.py`) e guarda o número e a posição em `docs/data/historico.json`. Se numa hora o sensor não enviar dados, usa a última posição conhecida; só sem nenhum registro usa as coordenadas aproximadas do campus (`NAMA_LAT_PADRAO`, `NAMA_LON_PADRAO`). O site mostra um aviso nos dois casos. O número encontrado aparece no topo do método, no site, e em `docs/data/qualiar.json` (campo `nama.id`).
 
 Se o sensor for privado na PurpleAir, a chave de leitura não o enxerga; nesse caso é preciso que o dono o torne público ou compartilhe a chave de leitura dele.
 
@@ -54,6 +60,12 @@ Se o sensor for privado na PurpleAir, a chave de leitura não o enxerga; nesse c
    - No modelo: por 3 h após a chuva, o peso do fogo não é recalibrado, a queda não vira tendência e a fumaça removida volta com escala de 3 h; a chuva observada entra no trajeto da fumaça e uma pancada em curso continua um pouco nas 2 horas seguintes.
    - A validação separa as previsões com chuva não prevista no intervalo.
 5b. **Fumaça distante e madrugada (variante F24R, em teste).** Focos fora dos 13 municípios (Pará, sul do Amazonas, Rondônia, Roraima...) vêm direto dos arquivos públicos do INPE (`focos/csv/10min` e `diario/Brasil`, os mesmos que o MonitorBETA baixa), agregados por célula de 0,25° e por hora em `docs/data/fogo_regional.json`. Para cada hora-alvo, uma retrotrajetória de 60 h parte da NAMA seguindo o vento a 925 hPa numa grade de 24 pontos do Open-Meteo; soma-se o que queimava perto do caminho (núcleo gaussiano de 30 km + 2,5 km por hora de viagem), com perda por diluição (36 h) e chuva no caminho. O índice (IFR) vira µg/m³ por um peso calibrado nas últimas 72 h. Um fator de madrugada (até 2,5×, entre 03h e 10h) multiplica a fumaça quando a noite anterior teve camada de mistura abaixo de 300 m e vento a 925 hPa forte. Para recalcular as últimas 60 h de uma vez: **Run workflow** com *diagnostico* marcado (grava `docs/data/diagnostico_regional.json`).
+5c. **Painel do Fogo, vento em alturas, ventilação e ilha de calor (variante F24U, em teste desde 20/10/2026).**
+   - Os focos de cada cidade vêm do MonitorBETA (`data/<regiao>/focos.geojson`), junto com a cópia do Painel do Fogo do Censipam (`censipam.json`). Um foco dentro de um evento do Painel pesa mais na emissão de fumaça, conforme a área do evento (×1 a ×3), e um evento ativo há 3 dias ou mais, ou com 5 km² ou mais, conta como provável incêndio. Alertas de atividade do GOES informam a potência atual do fogo.
+   - Vento a 10 m, 925 hPa (~800 m) e 850 hPa (~1.500 m), mostrado no site. Na F24U a fumaça distante é a média das trajetórias a 925 e 850 hPa.
+   - Coeficiente de ventilação = camada de mistura × vento médio dentro dela. Com ventilação fraca, a fumaça que já está na cidade demora mais a sair (o tempo de decaimento cresce até 2,5×).
+   - Ilha de calor: diferença entre a temperatura dos sensores PurpleAir e a do modelo, comparada com o normal daquela hora nos últimos 14 dias. À noite, cada 1 °C acima do normal alonga o decaimento em 15%.
+   - O site mostra a versão publicada e a versão em teste com maior acerto de classe a 6, 12 e 24 h, escolhida automaticamente; as demais seguem no JSON.
 6. **Previsão (modelo v0).** `PM(t+h) = [PM_base + E(h) · R(h)] · D(h)/D(0)`, com
    - `E(h) = E0 · e^(−h/τ) + K · IFB(h) · (1 − e^(−h/τ)) + tendência amortecida`: a anomalia atual decai e é substituída pelo que o vento traz dos focos;
    - `R(h) = e^(−λ · chuva acumulada até h)`: remoção pela chuva prevista;
