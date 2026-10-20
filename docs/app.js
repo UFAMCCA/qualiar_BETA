@@ -392,14 +392,15 @@ function desenharGrafico(el, d, h0) {
   const rotulos = [];
   nomesV.forEach((n, k) => {
     const pts = (ultimoObs ? [{ t: ultimoObs.t, v: ultimoObs.v }] : []).concat(d.previsao.map(p => ({ t: new Date(p.t), v: p.variantes[n] })));
-    s += `<path d="${pts.map((p, i) => `${i ? "L" : "M"}${X(+p.t).toFixed(1)} ${Y(p.v).toFixed(1)}`).join("")}" fill="none" stroke="var(--tinta-3)" stroke-width="1.2" stroke-dasharray="${["3 3", "1 3", "7 3"][k % 3]}"><title>variante em teste: ${esc(n)}</title></path>`;
+    const cams = n === "CAMS", cor = cams ? "#4f6fb8" : "var(--tinta-3)";
+    s += `<path d="${pts.map((p, i) => `${i ? "L" : "M"}${X(+p.t).toFixed(1)} ${Y(p.v).toFixed(1)}`).join("")}" fill="none" stroke="${cor}" stroke-width="${cams ? 1.8 : 1.2}" stroke-dasharray="${cams ? "6 3" : ["3 3", "1 3", "7 3"][k % 3]}"><title>${cams ? "CAMS (Copernicus) ajustado ao medido" : "variante em teste: " + esc(n)}</title></path>`;
     const ult = pts[pts.length - 1];
-    rotulos.push({ n, x: X(+ult.t) - 4, y: Y(ult.v) - 5 });
+    rotulos.push({ n, x: X(+ult.t) - 4, y: Y(ult.v) - 5, cor });
   });
   // rótulos no fim das linhas, afastados para não se sobreporem
   rotulos.sort((a, b) => a.y - b.y);
   rotulos.forEach((r, i) => { if (i && r.y - rotulos[i - 1].y < 11) r.y = rotulos[i - 1].y + 11; r.y = Math.max(mT + 22, r.y); });
-  rotulos.forEach(r => { s += `<text x="${r.x}" y="${r.y}" text-anchor="end" style="fill:var(--tinta-3);font-size:10px">${esc(r.n)}</text>`; });
+  rotulos.forEach(r => { s += `<text x="${r.x}" y="${r.y}" text-anchor="end" style="fill:${r.cor || "var(--tinta-3)"};font-size:10px;font-weight:600">${esc(r.n)}</text>`; });
   // agora
   s += `<line x1="${X(+h0)}" x2="${X(+h0)}" y1="${mT}" y2="${H - mB}" stroke="var(--acento)" stroke-width="1.5"/>`;
   s += `<text x="${X(+h0) - 6}" y="${mT + 10}" text-anchor="end">observado</text><text x="${X(+h0) + 6}" y="${mT + 10}">previsto</text>`;
