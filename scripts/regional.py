@@ -34,6 +34,7 @@ import os
 import re
 import sys
 import urllib.parse
+import unicodedata
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -66,6 +67,12 @@ def http_text(url, timeout=90):
         return r.read().decode("utf-8", errors="replace")
 
 
+def norm(nome):
+    """Nome de município comparável: sem acento, maiúsculo, sem "/UF"."""
+    nome = str(nome or "").split("/")[0].strip()
+    return "".join(c for c in unicodedata.normalize("NFD", nome) if unicodedata.category(c) != "Mn").upper()
+
+
 def dist_km(lat1, lon1, lat2, lon2):
     p1, p2 = math.radians(lat1), math.radians(lat2)
     dp, dl = p2 - p1, math.radians(lon2 - lon1)
@@ -92,23 +99,35 @@ def _dt(s):
 
 
 # ================================================================ limites dos 13 municípios
-def poligonos(limites_gj):
-    """Anéis externos dos municípios do MonitorBETA, com caixa envolvente, para excluir o fogo local."""
+UF_CODIGO = {"11": "RO", "12": "AC", "13": "AM", "14": "RR", "15": "PA", "16": "AP", "17": "TO", "21": "MA", "22": "PI",
+             "23": "CE", "24": "RN", "25": "PB", "26": "PE", "27": "AL", "28": "SE", "29": "BA", "31": "MG", "32": "ES",
+             "33": "RJ", "35": "SP", "41": "PR", "42": "SC", "43": "RS", "50": "MS", "51": "MT", "52": "GO", "53": "DF"}
+
+
+def poligonos(limites_gj, campo_nome="nome"):
+    """Anéis externos dos polígonos, com caixa envolvente e nome: [(caixa, anel, nome)]."""
     out = []
     for f in (limites_gj or {}).get("features", []):
         g = f.get("geometry") or {}
+        pr = f.get("properties") or {}
+        nome = pr.get(campo_nome) or pr.get("nome") or pr.get("codarea") or "?"
         polys = g.get("coordinates", []) if g.get("type") == "MultiPolygon" else [g.get("coordinates", [])]
         for p in polys:
             if not p:
                 continue
             anel = p[0]
             xs, ys = [c[0] for c in anel], [c[1] for c in anel]
-            out.append(((min(xs), min(ys), max(xs), max(ys)), anel))
+            out.append(((min(xs), min(ys), max(xs), max(ys)), anel, nome))
     return out
 
 
 def dentro(lat, lon, polys):
-    for (x0, y0, x1, y1), anel in polys:
+    return qual(lat, lon, polys) is not None
+
+
+def qual(lat, lon, polys):
+    """Nome do polígono que contém o ponto, ou None."""
+    for (x0, y0, x1, y1), anel, nome in polys:
         if not (x0 <= lon <= x1 and y0 <= lat <= y1):
             continue
         ins, j = False, len(anel) - 1
@@ -119,8 +138,8 @@ def dentro(lat, lon, polys):
                 ins = not ins
             j = i
         if ins:
-            return True
-    return False
+            return nome
+    return None
 
 
 # ================================================================ focos do INPE
@@ -132,42 +151,57 @@ def ler_csv_inpe(texto):
         if lat is None or lon is None or t is None:
             continue
         uf = (r.get("estado") or "").strip().upper()
-        yield t, lat, lon, _num(r.get("frp")), UF_SIGLA.get(uf, uf[:2] if uf else "?")
+        pais = norm(r.get("pais") or "BRASIL")
+        sigla = UF_SIGLA.get(uf, uf[:2] if uf else "?") if pais == "BRASIL" else pais.title()
+        yield t, lat, lon, _num(r.get("frp")), sigla, norm(r.get("municipio")), pais
 
 
-def _agregar(cache, linhas, nama, polys):
+def _agregar(cache, linhas, ufs=None):
+    """Agrega por célula de 0,25 grau e hora: [peso, UF ou país, município, país].
+    Os arquivos de 10 minutos do INPE não trazem estado nem município: a UF vem
+    dos limites estaduais do IBGE (fora deles, "fora do Brasil")."""
     o, s, l, n = C.REG_CAIXA
     cel = cache.setdefault("celulas", {})
     g = C.REG_CELULA_GRAUS
     novos = 0
-    for t, lat, lon, frp, uf in linhas:
+    for t, lat, lon, frp, uf, mun, pais in linhas:
         if not (o <= lon <= l and s <= lat <= n):
             continue
-        if dist_km(nama["lat"], nama["lon"], lat, lon) < C.REG_DIST_MIN_KM or dentro(lat, lon, polys):
-            continue                      # fogo local: já está no IFB do MonitorBETA
         la, lo = (math.floor(lat / g) + 0.5) * g, (math.floor(lon / g) + 0.5) * g
         k = f"{iso(hora_cheia(t))}|{la:.3f}|{lo:.3f}"
         w = min(5.0, max(1.0, (frp or 0) / C.REG_FRP_REF_MW))
+        if (not uf or uf == "?") and ufs:
+            cod = qual(la, lo, ufs)
+            uf = UF_CODIGO.get(str(cod), str(cod)) if cod else "fora do Brasil"
+            pais = "BRASIL" if cod else ""
         if k not in cel:
             novos += 1
-            cel[k] = [w, uf]
+            cel[k] = [w, uf, mun, pais]
         elif w > cel[k][0]:
             cel[k][0] = w
     return novos
 
 
-def atualizar_focos(cache, agora, nama, polys, status, baixar=http_text):
+def atualizar_focos(cache, agora, status, baixar=http_text, ufs=None):
     """Atualiza o cache {celulas: {"hora|lat|lon": [peso, UF]}, ultimo_10min: nome}."""
     inicio = agora - timedelta(hours=C.REG_GUARDA_H)
     total = 0
+    if ufs:  # células antigas sem UF (gravadas antes dos limites estaduais)
+        memo = {}
+        for k, v in cache.get("celulas", {}).items():
+            if len(v) < 2 or v[1] in ("?", ""):
+                _, la, lo = k.split("|")
+                if (la, lo) not in memo:
+                    cod = qual(float(la), float(lo), ufs)
+                    memo[(la, lo)] = UF_CODIGO.get(str(cod), str(cod)) if cod else "fora do Brasil"
+                cache["celulas"][k] = [v[0], memo[(la, lo)], "", "BRASIL" if memo[(la, lo)] != "fora do Brasil" else ""]
     # primeira vez (ou cache vazio): arquivos diários dos últimos dias cobrem o passado
     if not cache.get("celulas"):
         n = 0
         for dias in range(0, 4):
             d = (agora - timedelta(days=dias)).strftime("%Y%m%d")
             try:
-                total += _agregar(cache, ler_csv_inpe(baixar(f"{C.INPE_FOCOS_URL}/diario/Brasil/focos_diario_br_{d}.csv")),
-                                  nama, polys)
+                total += _agregar(cache, ler_csv_inpe(baixar(f"{C.INPE_FOCOS_URL}/diario/Brasil/focos_diario_br_{d}.csv")), ufs)
                 n += 1
             except Exception:
                 pass
@@ -185,7 +219,7 @@ def atualizar_focos(cache, agora, nama, polys, status, baixar=http_text):
         erros = 0
         for nome in pend:
             try:
-                total += _agregar(cache, ler_csv_inpe(baixar(f"{C.INPE_FOCOS_URL}/10min/{nome}")), nama, polys)
+                total += _agregar(cache, ler_csv_inpe(baixar(f"{C.INPE_FOCOS_URL}/10min/{nome}")), ufs)
                 cache["ultimo_10min"] = nome
             except Exception:
                 erros += 1
@@ -206,13 +240,85 @@ def gravar_cache(caminho, cache):
     caminho.write_text(texto, encoding="utf-8")
 
 
-def indexar(cache):
-    """{hora (datetime): [(lat, lon, peso, UF), ...]}"""
-    idx = {}
-    for k, (w, uf) in cache.get("celulas", {}).items():
+def _local(la, lo, centro, polys, estrangeiro):
+    """Nome do município (ou do país vizinho) se a célula pertence ao entorno local da região, senão None."""
+    d = dist_km(centro["lat"], centro["lon"], la, lo)
+    nome = qual(la, lo, polys) if polys else None
+    if nome:
+        return nome
+    if estrangeiro and lo <= estrangeiro["lon_max"] and d <= estrangeiro["raio_km"]:
+        return estrangeiro["rotulo"]
+    if not polys and d <= C.REG_LOCAL_SEM_LIMITES_KM:
+        return "entorno"
+    if d < C.REG_DIST_MIN_KM:
+        return "entorno"
+    return None
+
+
+def indexar(cache, centro=None, polys=None, estrangeiro=None):
+    """{hora: {(lat inteiro, lon inteiro): [(lat, lon, peso, UF), ...]}}, sem as células locais da região."""
+    idx, memo_local = {}, {}
+    for k, v in cache.get("celulas", {}).items():
         t, la, lo = k.split("|")
-        idx.setdefault(parse_iso(t), []).append((float(la), float(lo), w, uf))
+        la, lo = float(la), float(lo)
+        if centro:
+            if (la, lo) not in memo_local:
+                memo_local[(la, lo)] = _local(la, lo, centro, polys, estrangeiro)
+            if memo_local[(la, lo)]:
+                continue
+        idx.setdefault(parse_iso(t), {}).setdefault((math.floor(la), math.floor(lo)), []).append((la, lo, v[0], v[1]))
     return idx
+
+
+def _celulas_perto(buckets, lat, lon, jan):
+    for bi in range(math.floor(lat - jan), math.floor(lat + jan) + 1):
+        for bj in range(math.floor(lon - jan * 1.1), math.floor(lon + jan * 1.1) + 1):
+            yield from buckets.get((bi, bj), ())
+
+
+def focos_locais(cache, agora, centro, polys, estrangeiro):
+    """Focos do entorno de uma região a partir das células do INPE (para regiões sem MonitorBETA),
+    no formato que o IFB usa. Cada célula de 0,25 grau com detecção nas últimas 48 h vira um foco,
+    atribuído ao município cujo limite (IBGE) a contém."""
+    por_cel, memo = {}, {}
+    for k, v in cache.get("celulas", {}).items():
+        t, la, lo = k.split("|")
+        la, lo = float(la), float(lo)
+        t = parse_iso(t)
+        if t < agora - timedelta(hours=48):
+            continue
+        if (la, lo) not in memo:
+            memo[(la, lo)] = _local(la, lo, centro, polys, estrangeiro)
+        mun = memo[(la, lo)]
+        if not mun:
+            continue
+        c = por_cel.setdefault((la, lo), {"mun": mun, "ini": t, "fim": t, "w": v[0], "n": 0,
+                                          "d": dist_km(centro["lat"], centro["lon"], la, lo)})
+        c["ini"], c["fim"], c["w"], c["n"] = min(c["ini"], t), max(c["fim"], t), max(c["w"], v[0]), c["n"] + 1
+    out = []
+    for (la, lo), c in por_cel.items():
+        idade = (agora - c["fim"]).total_seconds() / 3600
+        ativo = idade <= 3
+        cat = "ativo" if ativo else ("recem_extinto" if idade <= C.RECEM_EXTINTO_H + 1 else "extinto")
+        dur = (c["fim"] - c["ini"]).total_seconds() / 3600 + 1
+        frp = c["w"] * C.REG_FRP_REF_MW if c["w"] > 1 else None
+        out.append({
+            "id": f"inpe-{la:.3f}-{lo:.3f}", "municipio": c["mun"], "lat": la, "lon": lo,
+            "categoria": cat, "provavel_incendio": ativo and (dur >= C.INCENDIO_DURACAO_H or (frp or 0) >= C.INCENDIO_FRP_MW),
+            "dist_km": round(c["d"], 1), "rumo": round(_rumo(centro["lat"], centro["lon"], la, lo), 0),
+            "idade_h": round(idade, 1), "frp_max": frp, "n_pixels": c["n"], "duracao_h": round(dur, 0),
+            "ultima_deteccao": iso(c["fim"]), "primeira_deteccao": iso(c["ini"]),
+            "fim_emissao": None if ativo else iso(c["fim"] + timedelta(hours=1)),
+        })
+    return out
+
+
+def _rumo(lat1, lon1, lat2, lon2):
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dl = math.radians(lon2 - lon1)
+    x = math.sin(dl) * math.cos(p2)
+    y = math.cos(p1) * math.sin(p2) - math.sin(p1) * math.cos(p2) * math.cos(dl)
+    return (math.degrees(math.atan2(x, y)) + 360) % 360
 
 
 # ================================================================ vento a 925 hPa na região
@@ -282,24 +388,30 @@ def trajetoria(campo, t_chegada, lat0, lon0, horas=None):
 def ifr(traj, idx, agora):
     """Índice de fogo regional para uma trajetória: total e parte de cada estado."""
     agora_h = hora_cheia(agora)
-    recentes = {}
-    for hh in range(0, 25):
-        for c in idx.get(agora_h - timedelta(hours=hh), []):
-            kk = (c[0], c[1])
-            if kk not in recentes or c[2] > recentes[kk][2]:
-                recentes[kk] = c
+    memo = idx.setdefault("_memo", {})
+
+    def juntar(horas):
+        chave_memo = (horas[0], horas[-1], len(horas))
+        if chave_memo in memo:
+            return memo[chave_memo]
+        b = {}
+        for hora in horas:
+            for chave, lst in idx.get(hora, {}).items():
+                dst = b.setdefault(chave, {})
+                for c in lst:
+                    kk = (c[0], c[1])
+                    if kk not in dst or c[2] > dst[kk][2]:
+                        dst[kk] = c
+        memo[chave_memo] = {k: list(v.values()) for k, v in b.items()}
+        return memo[chave_memo]
+    recentes = juntar([agora_h - timedelta(hours=hh) for hh in range(0, 25)])
     tot, por_uf, chuva_cum = 0.0, {}, 0.0
     for k, tau, lat, lon, mm in traj:
         chuva_cum += mm
         if k == 0:
             continue
         if tau <= agora_h:
-            ativos = {}
-            for hh in range(-1, C.REG_ATIVO_H + 1):
-                for c in idx.get(tau - timedelta(hours=hh), []):
-                    kk = (c[0], c[1])
-                    if kk not in ativos or c[2] > ativos[kk][2]:
-                        ativos[kk] = c
+            ativos = juntar([tau - timedelta(hours=hh) for hh in range(-1, C.REG_ATIVO_H + 1)])
             fator = 1.0
         else:
             ativos, fator = recentes, C.REG_PERSISTENCIA
@@ -308,7 +420,7 @@ def ifr(traj, idx, agora):
         sig = C.REG_SIGMA0_KM + C.REG_SIGMA_KMH * k
         jan = 3 * sig / 111.0
         perda = math.exp(-k / C.REG_TAU_H) * math.exp(-C.LAMBDA_ROTA * chuva_cum) * fator
-        for la, lo, w, uf in ativos.values():
+        for la, lo, w, uf in _celulas_perto(ativos, lat, lon, jan):
             if abs(la - lat) > jan or abs(lo - lon) > jan * 1.1:
                 continue
             d = dist_km(lat, lon, la, lo)
@@ -416,14 +528,13 @@ def main():
     nama = {"lat": conhecida.get("lat", C.NAMA_LAT_PADRAO), "lon": conhecida.get("lon", C.NAMA_LON_PADRAO)}
     status = {}
     cache = Q.ler_json("fogo_regional.json", {})
-    lim = Q.ler_json("limites.geojson", None)
-    atualizar_focos(cache, agora, nama, poligonos(lim), status)
+    atualizar_focos(cache, agora, status)
     gravar_cache(C.DATA_DIR / "fogo_regional.json", cache)
     campo = Campo.coletar(Q.http_json)
     meteo = Q.coletar_meteo(nama["lat"], nama["lon"])
     met = {l["t"]: l for l in meteo}
     serie = {h["t"]: h["mediana"] for h in hist["horas"]}
-    idx = indexar(cache)
+    idx = indexar(cache, nama, poligonos(Q.ler_json("limites.geojson", None)))
     linhas = []
     for k in range(C.REG_TRAJ_H, -1, -1):
         t = hora_cheia(agora) - timedelta(hours=k)
