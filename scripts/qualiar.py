@@ -263,10 +263,11 @@ def coletar_meteo(lat, lon):
             "t": iso(datetime.fromtimestamp(ts, UTC)),
             "temp": h["temperature_2m"][i], "ur": h["relative_humidity_2m"][i],
             "chuva": h["precipitation"][i], "prob": h["precipitation_probability"][i],
-            "vento": h["wind_speed_10m"][i], "dir": h["wind_direction_10m"][i], "blh": None, "v925": None, "d925": None,
+            "vento": h["wind_speed_10m"][i], "dir": h["wind_direction_10m"][i], "blh": None, "v925": None, "d925": None, "v850": None, "d850": None,
         })
     opcionais = [("boundary_layer_height", ["blh"]),
-                 ("wind_speed_925hPa,wind_direction_925hPa", ["v925", "d925"])]
+                 ("wind_speed_925hPa,wind_direction_925hPa", ["v925", "d925"]),
+                 ("wind_speed_850hPa,wind_direction_850hPa", ["v850", "d850"])]
     for campos, chaves in opcionais:  # nem todo modelo fornece; opcional
         try:
             q2 = {k: v for k, v in q.items() if k != "hourly"}
@@ -309,10 +310,57 @@ def resumo_chuva(linhas, agora):
 
 
 # ================================================================ focos
-def baixar_monitorbeta():
-    return (http_json(C.MONITORBETA_URL + "focos.geojson"),
-            http_json(C.MONITORBETA_URL + "resumo.json"),
-            http_json(C.MONITORBETA_URL + "limites.geojson"))
+def baixar_monitorbeta(rid="manaus"):
+    """Focos, resumo e limites de uma região do MonitorBETA (pastas por região desde 19/10/2026),
+    mais a cópia do Painel do Fogo (Censipam), quando existir."""
+    base = f"{C.MONITORBETA_URL}{rid}/"
+    focos, resumo, limites = (http_json(base + "focos.geojson"), http_json(base + "resumo.json"),
+                              http_json(base + "limites.geojson"))
+    try:
+        censipam = http_json(base + "censipam.json", tentativas=1)
+    except Exception:
+        censipam = None
+    return focos, resumo, limites, censipam
+
+
+def aplicar_painel_fogo(focos, censipam):
+    """Cruza cada foco com os eventos e alertas do Painel do Fogo (Censipam/SIPAM).
+    Evento grande ou persistente pesa mais na emissão de fumaça e conta como provável incêndio;
+    um alerta de atividade do GOES recente sobre o foco informa a potência atual (MW)."""
+    if not censipam:
+        return 0
+    cam = censipam.get("camadas", {})
+    eventos = RG.poligonos(cam.get("mv_evento_filtro"), "id_evento")
+    props = {f["properties"].get("id_evento"): f["properties"] for f in (cam.get("mv_evento_filtro") or {}).get("features", [])}
+    alertas = []
+    for nome in ("mv_alertas_goes_atividade_eventos", "mv_alertas_goes_novos_eventos"):
+        for f in (cam.get(nome) or {}).get("features", []):
+            pr = f.get("properties") or {}
+            for caixa, anel, _ in RG.poligonos({"features": [f]}):
+                alertas.append((caixa, pr.get("total_power"), pr.get("dt_maxima")))
+    n = 0
+    for f in focos:
+        idev = RG.qual(f["lat"], f["lon"], eventos)
+        if idev is None:   # pixel do foco pode cair na borda do polígono: tolerância de ~1 km
+            for d_la, d_lo in ((0.01, 0), (-0.01, 0), (0, 0.01), (0, -0.01)):
+                idev = RG.qual(f["lat"] + d_la, f["lon"] + d_lo, eventos)
+                if idev is not None:
+                    break
+        if idev is not None and idev in props:
+            pr = props[idev]
+            area = pr.get("area_total_evento") or 0.0
+            pers = pr.get("persistencia_dias") or 0
+            f["painel_fogo"] = {"id_evento": idev, "area_km2": round(area, 2), "persistencia_dias": pers,
+                                "deteccoes": pr.get("qtd_deteccoes")}
+            f["mult_painel"] = round(min(C.PAINEL_MULT_MAX, 1 + C.PAINEL_MULT_POR_LOG * math.log2(1 + area)), 2)
+            if f["categoria"] == "ativo" and (pers >= C.PAINEL_PERSIST_INCENDIO_D or area >= C.PAINEL_AREA_INCENDIO_KM2):
+                f["provavel_incendio"] = True
+            n += 1
+        for (x0, y0, x1, y1), pot, dtm in alertas:
+            if x0 - 0.01 <= f["lon"] <= x1 + 0.01 and y0 - 0.01 <= f["lat"] <= y1 + 0.01 and pot:
+                f["frp_max"] = max(f.get("frp_max") or 0, pot)
+                f["goes_painel"] = {"potencia_mw": round(pot, 1), "ate": dtm}
+    return n
 
 
 def preparar_focos(focos_gj, nama, agora):
@@ -446,7 +494,7 @@ def peso_foco(f):
     else:
         w = min(5.0, max(1.0, math.sqrt(f.get("n_pixels") or 1)))
     frac_ft = C.INJ_FT_MIN + (C.INJ_FT_MAX - C.INJ_FT_MIN) * min(1.0, max(0.0, ((frp or 0) - C.INJ_FRP_INI) / (C.INJ_FRP_FIM - C.INJ_FRP_INI)))
-    return w * (1 - frac_ft)
+    return w * (1 - frac_ft) * f.get("mult_painel", 1.0)
 
 
 def ifb(focos, ventos: Ventos, t_alvo: datetime, agora: datetime, detalhar=False):
@@ -559,6 +607,70 @@ def prob_classes(pm, sigma):
     return [round(p, 3) for p in ps]
 
 
+def _vetor(vel, dire):
+    if vel is None or dire is None:
+        return None
+    return _vec(vel, dire)
+
+
+def ventilacao(l):
+    """Coeficiente de ventilação (m²/s) = camada de mistura x vento médio nela (média vetorial
+    de 10 m, 925 hPa e, com camada acima de 1.000 m, 850 hPa)."""
+    if not l or not l.get("blh"):
+        return None
+    vs = [_vetor(l.get("vento"), l.get("dir")), _vetor(l.get("v925"), l.get("d925"))]
+    if l["blh"] > 1000:
+        vs.append(_vetor(l.get("v850"), l.get("d850")))
+    vs = [v for v in vs if v]
+    if not vs:
+        return None
+    u, v = sum(x[0] for x in vs) / len(vs), sum(x[1] for x in vs) / len(vs)
+    return l["blh"] * max(0.3, math.hypot(u, v))
+
+
+def classe_ventilacao(vc):
+    if vc is None:
+        return None
+    return "ruim" if vc < 1000 else ("fraca" if vc < 2350 else ("moderada" if vc < 6000 else "boa"))
+
+
+def fator_ventilacao(l):
+    vc = ventilacao(l)
+    if vc is None:
+        return 1.0
+    return min(C.VENT_FATOR_MAX, max(C.VENT_FATOR_MIN, (C.VENT_REF_M2S / max(vc, 100.0)) ** C.VENT_EXPOENTE))
+
+
+def ilha_de_calor(historico, met, h0):
+    """Intensidade da ilha de calor agora em relação ao normal da hora (°C), pelos sensores PurpleAir:
+    mediana da temperatura dos sensores menos a temperatura do modelo, comparada com a mediana
+    dessa diferença na mesma hora local dos últimos dias."""
+    dif = {}
+    for x in historico.get("horas", []):
+        t = parse_iso(x["t"])
+        if t < h0 - timedelta(days=C.ILHA_DIAS) or t > h0:
+            continue
+        ts = [v[2] for v in (x.get("met") or {}).values() if isinstance(v, list) and len(v) > 2 and v[2] is not None]
+        l = met.get(x["t"])
+        if len(ts) >= 1 and l and l.get("temp") is not None:
+            dif[t] = median(ts) - l["temp"]
+    if h0 not in dif:
+        return None
+    hl = h0.astimezone(TZ).hour
+    mesmas = [v for t, v in dif.items() if t.astimezone(TZ).hour == hl and t != h0]
+    if len(mesmas) < 3:
+        return {"dif_c": round(dif[h0], 1), "normal_c": None, "anomalia_c": None, "dias": len(mesmas)}
+    normal = median(mesmas)
+    return {"dif_c": round(dif[h0], 1), "normal_c": round(normal, 1), "anomalia_c": round(dif[h0] - normal, 1),
+            "dias": len(mesmas)}
+
+
+def fator_ilha(ilha, t):
+    if not ilha or ilha.get("anomalia_c") is None or t.astimezone(TZ).hour not in C.ILHA_HORAS_NOITE:
+        return 1.0
+    return min(C.ILHA_FATOR_MAX, 1.0 + C.ILHA_FATOR_POR_GRAU * max(0.0, ilha["anomalia_c"]))
+
+
 def pulso(e0, dec, fundo, fumaca):
     """Anomalia que decai de e0 para max(fundo, fumaça); se a fumaça prevista passa do que há
     agora, o excesso entra inteiro (uma pluma que chega não é amortecida pela persistência)."""
@@ -615,6 +727,8 @@ def prever(agora, p0, historico, meteo, focos, lavagem=None, chuva_obs=None, cam
     chuva_acum = 0.0
     chuvas_h = []
     prev = []
+    ilha = ilha_de_calor(historico, met, h0)
+    soma_inv_tau = 0.0     # decaimento integrado da F24U (tau varia com a ventilação e a ilha de calor)
     for h in C.HORIZONTES:
         t = h0 + timedelta(hours=h)
         m = met.get(iso(t))
@@ -666,6 +780,16 @@ def prever(agora, p0, historico, meteo, focos, lavagem=None, chuva_obs=None, cam
                 variantes[nome] = variantes["F24N"]; continue
             exc_n = pulso(e0, dec, fundo[24], fum) + tend_f + recup
             variantes[nome] = round(max(1.0, C.PM_BASE + max(0.0, exc_n) * math.exp(-C.LAMBDA_CHUVA * chuva_ef)), 1)
+        # F24U: fumaça distante em duas alturas + ventilação + ilha de calor
+        fv, fi = fator_ventilacao(m), fator_ilha(ilha, t)
+        soma_inv_tau += 1.0 / (C.TAU_PERSIST_H * fv * fi)
+        dec_u = math.exp(-soma_inv_tau)
+        ifr850_t = ((regional or {}).get("ifr850") or {}).get(t, (None, {}))[0]
+        ifr_u = ifr_t if ifr850_t is None else C.PESO_NIVEL_925 * ifr_t + (1 - C.PESO_NIVEL_925) * ifr850_t
+        k_u = (regional or {}).get("k_u", k_reg)
+        fum_u = (fogo_local + k_u * ifr_u) * noite
+        exc_u = pulso(e0, dec_u, fundo[24], fum_u) + tend_f + recup
+        variantes["F24U"] = round(max(1.0, C.PM_BASE + max(0.0, exc_u) * math.exp(-C.LAMBDA_CHUVA * chuva_ef)), 1) if regional else variantes["F24R"]
         pm = variantes[C.MODELO_PUBLICADO]
         sig = C.SIGMA_BASE + C.SIGMA_POR_RAIZ_H * math.sqrt(h)
         prev.append({
@@ -677,6 +801,8 @@ def prever(agora, p0, historico, meteo, focos, lavagem=None, chuva_obs=None, cam
             "fogo_ug": round(k * ifb_h * (1 - dec), 1), "recuperacao_ug": round(recup, 1),
             "variantes": variantes,
             "noite": round(noite, 2), "noite_det": noite_det,
+            "ventilacao_m2s": None if ventilacao(m) is None else round(ventilacao(m)), "fator_ventilacao": round(fv, 2),
+            "fator_ilha": round(fi, 2), "ifr850": None if ifr850_t is None else round(ifr850_t, 2),
             "ifr": round(ifr_t, 2), "fumaca_distante_ug": round(k_reg * ifr_t * noite, 1),
             "ifr_uf": {u: round(x / ifr_t, 2) for u, x in sorted(uf_t.items(), key=lambda z: -z[1])[:4]} if ifr_t > 0 else {},
             "municipios": {mu: round(v / ifb_h, 3) for mu, v in sorted(mun_h.items(), key=lambda x: -x[1])} if ifb_h > 0 else {},
@@ -710,6 +836,11 @@ def prever(agora, p0, historico, meteo, focos, lavagem=None, chuva_obs=None, cam
             "cams_fator": None if fator_cams is None else round(fator_cams, 2),
             "cams_agora": None if not cams or cams.get(h0) is None else round(cams[h0], 1),
             "variantes_no_grafico": list(C.VARIANTES_NO_GRAFICO),
+            "ilha_calor": ilha,
+            "ventilacao_agora": None if ventilacao(m_agora) is None else round(ventilacao(m_agora)),
+            "ventilacao_classe": classe_ventilacao(ventilacao(m_agora)),
+            "perfil_vento": [{"t": iso(h0 + timedelta(hours=hh)), **{k: (met.get(iso(h0 + timedelta(hours=hh))) or {}).get(k)
+                              for k in ("vento", "dir", "v925", "d925", "v850", "d850", "blh")}} for hh in (0, 6, 12)],
             "regional": None if not regional else {
                 "ifr_agora": round(regional["ifr"].get(h0, (0.0, {}))[0], 2),
                 "uf_agora": {u: round(x / max(regional["ifr"].get(h0, (0.0, {}))[0], 1e-9), 2) for u, x in
@@ -728,6 +859,26 @@ def risco_matinal(prev):
         if p["h"] <= C.RISCO_MATINAL_H and p.get("noite", 1) > 1.5 and p["variantes"].get("F24R", 0) >= C.RISCO_MATINAL_UG:
             return {"t": p["t"], "pm": p["variantes"]["F24R"], "fator": p["noite"], "origem": p.get("ifr_uf", {})}
     return None
+
+
+def escolher_variantes(validacao):
+    """A versão publicada e a melhor das outras: maior acerto de classe médio nas previsões de
+    6, 12 e 24 h (desempate pelo menor erro), exigindo ao menos 24 previsões avaliadas a 6 h."""
+    notas = {}
+    for v in validacao:
+        if v.get("h") not in (6, 12, 24):
+            continue
+        for nome, x in (v.get("variantes") or {}).items():
+            if nome == C.MODELO_PUBLICADO or nome not in C.VARIANTES:
+                continue
+            notas.setdefault(nome, []).append((x["acerto_classe"], -x["mae"], x["n"], v["h"]))
+    cand = []
+    for nome, lst in notas.items():
+        n6 = next((n for _, _, n, h in lst if h == 6), 0)
+        if n6 >= 24 and len(lst) == 3:
+            cand.append((sum(a for a, _, _, _ in lst) / 3, sum(e for _, e, _, _ in lst) / 3, nome))
+    melhor = max(cand)[2] if cand else next((n for n in C.VARIANTES_NO_SITE if n != C.MODELO_PUBLICADO), None)
+    return [C.MODELO_PUBLICADO] + ([melhor] if melhor else [])
 
 
 # ================================================================ validação
@@ -937,17 +1088,12 @@ def main():
     teste = a.teste
     focos_dir = a.focos_local or (os.path.join(os.path.dirname(__file__), "amostra") if teste else None)
 
-    # focos do MonitorBETA (Manaus); no teste, o "agora" é o da amostra
-    try:
-        if focos_dir:
-            ler = lambda n: json.load(open(os.path.join(focos_dir, n), encoding="utf-8"))
-            focos_gj, mb_resumo, limites_mb = ler("focos.geojson"), ler("resumo.json"), ler("limites.geojson")
-        else:
-            focos_gj, mb_resumo, limites_mb = baixar_monitorbeta()
-        status_comum["MonitorBETA"] = "ok"
-    except Exception as e:
-        focos_gj, mb_resumo, limites_mb = {"features": []}, {}, None
-        status_comum["MonitorBETA"] = f"erro: {e}"
+    # focos do MonitorBETA: no teste, a amostra local (Manaus) e o "agora" dela
+    amostra = None
+    if focos_dir:
+        ler = lambda n: json.load(open(os.path.join(focos_dir, n), encoding="utf-8"))
+        amostra = (ler("focos.geojson"), ler("resumo.json"), ler("limites.geojson"), None)
+    mb_resumo = amostra[1] if amostra else {}
 
     if a.agora:
         agora = parse_iso(a.agora)
@@ -997,7 +1143,7 @@ def main():
             continue
         try:
             r = processar_regiao(reg, a, agora, h0, teste, dict(status_comum), chave, purpleair,
-                                 focos_gj, mb_resumo, limites_mb, cache_reg, campo)
+                                 amostra, cache_reg, campo)
             resumo[reg["id"]] = r
         except Exception as e:  # uma região com problema não derruba as outras
             import traceback
@@ -1008,11 +1154,20 @@ def main():
                                  "regioes": sorted(resumo.values(), key=lambda r: ordem.index(r["id"]) if r["id"] in ordem else 99)})
 
 
-def processar_regiao(reg, a, agora, h0, teste, status, chave, purpleair, focos_gj, mb_resumo, limites_mb, cache_reg, campo):
+def processar_regiao(reg, a, agora, h0, teste, status, chave, purpleair, amostra, cache_reg, campo):
     pasta = pasta_regiao(reg)
     eh_manaus = reg["id"] == "manaus"
-    if not eh_manaus:
-        status.pop("MonitorBETA", None)
+    # focos e limites do MonitorBETA desta região (com a cópia do Painel do Fogo)
+    mb = None
+    if teste:
+        mb = amostra if eh_manaus else None
+    elif reg.get("monitorbeta"):
+        try:
+            mb = baixar_monitorbeta(reg["monitorbeta"])
+            status["MonitorBETA"] = "ok"
+        except Exception as e:
+            status["MonitorBETA"] = f"erro: {e}"
+    mb_resumo = (mb[1] if mb else {}) or {}
     historico = ler_json("historico.json", {"horas": []}, pasta) if not teste else {"horas": []}
     log = ler_json("validacao_log.json", {"previsoes": []}, pasta) if not teste else {"previsoes": []}
 
@@ -1140,13 +1295,18 @@ def processar_regiao(reg, a, agora, h0, teste, status, chave, purpleair, focos_g
 
     # focos do entorno (limites municipais definem o que é local)
     estrangeiro = reg.get("estrangeiro")
-    if eh_manaus:
-        limites = limites_mb
+    if mb:
+        limites = mb[2]
         polys = RG.poligonos(limites)
-        focos = preparar_focos(focos_gj, nama, agora)
-        munis = resumo_municipios(focos)
+        focos = preparar_focos(mb[0], nama, agora)
+        n_painel = aplicar_painel_fogo(focos, mb[3])
+        if mb[3]:
+            status["Painel do Fogo"] = f"ok ({n_painel} focos em eventos)"
+        nomes = [f_["properties"].get("nome") for f_ in (limites or {}).get("features", []) if f_.get("properties", {}).get("nome")]
+        munis = resumo_municipios(focos, nomes if not eh_manaus and nomes else None)
         fonte_focos = {"nome": "MonitorBETA", "url": "https://ufamcca.github.io/MonitorBETA/",
-                       "gerado_em": mb_resumo.get("gerado_em")}
+                       "gerado_em": mb_resumo.get("gerado_em"),
+                       "painel_fogo": (mb[3] or {}).get("gerado_em")}
     else:
         limites = buscar_limites_ibge(reg, status) if not teste else None
         polys = RG.poligonos(limites)
@@ -1166,7 +1326,14 @@ def processar_regiao(reg, a, agora, h0, teste, status, chave, purpleair, focos_g
             RG.preencher_historico(hist_reg, campo, idx, agora, nama, met)
             serie_obs = {x["t"]: x["mediana"] for x in historico["horas"]}
             k_reg, n_cal = RG.calibrar_k(hist_reg, serie_obs, h0, C.PM_BASE)
-            regional = {"ifr": ifr_map, "traj": traj0, "k_reg": k_reg, "n_cal": n_cal,
+            ifr850_map = None
+            if campo.niveis.get("850"):
+                ifr850_map, _ = RG.calcular(campo, idx, agora, nama, horas, nivel="850")
+            k_u, n_cal_u = RG.calibrar_k(hist_reg, serie_obs, h0, C.PM_BASE, chave="ifr_u")
+            if n_cal_u < C.K_REG_MIN_HORAS:
+                k_u = k_reg          # até ter horas com as duas alturas, usa o peso da F24R
+            regional = {"ifr": ifr_map, "ifr850": ifr850_map, "k_u": k_u, "n_cal_u": n_cal_u,
+                        "traj": traj0, "k_reg": k_reg, "n_cal": n_cal,
                         "celulas": sum(len(v) for kk, b in idx.items() if kk != "_memo" for v in b.values())}
         except Exception as e:
             status["Fumaça distante"] = f"erro: {e}"
@@ -1191,6 +1358,7 @@ def processar_regiao(reg, a, agora, h0, teste, status, chave, purpleair, focos_g
             e = max(antes, key=lambda x: x["emitida"])
             efeito = {"emitida": e["emitida"], "previsto": e["prev"], "observado": p0, "dif": round(p0 - e["prev"], 1)}
     validacao = validar(log, historico, agora)
+    no_site = escolher_variantes(validacao)
 
     serie = [h for h in historico["horas"] if parse_iso(h["t"]) <= h0]
     ult24 = [h for h in serie if parse_iso(h["t"]) > h0 - timedelta(hours=24)]
@@ -1228,7 +1396,7 @@ def processar_regiao(reg, a, agora, h0, teste, status, chave, purpleair, focos_g
                                 "incendio_pixels": C.INCENDIO_PIXELS, "incendio_frp_mw": C.INCENDIO_FRP_MW},
                   "aneis_km": C.IFB_ANEIS_KM},
         "modelo": {"versao": f"v0.5 · variante {C.MODELO_PUBLICADO} (fundo regional + fogo a barlavento + chuva prevista e observada)", **info,
-                   "variantes_no_site": list(C.VARIANTES_NO_SITE),
+                   "variantes_no_site": no_site,
                    "tem_925": any(l.get("v925") is not None for l in meteo),
                    "parametros": {"pm_base": C.PM_BASE, "tau_persist_h": C.TAU_PERSIST_H, "k_fogo_inicial": C.K_FOGO,
                                   "ifb_L_km": C.IFB_L_KM, "peso_925": C.VT_PESO_925, "sigma_ang": [C.SIGMA_ANG_MIN, C.SIGMA_ANG_MAX],
@@ -1246,7 +1414,7 @@ def processar_regiao(reg, a, agora, h0, teste, status, chave, purpleair, focos_g
                                        for t, c in f.get("_contrib", {}).items()}}}
         for f in focos if f["categoria"] != "extinto" or f.get("_contrib")]}
     gravar_json("focos_pontos.geojson", pontos, pasta)
-    if limites and eh_manaus:
+    if limites and mb:
         gravar_json("limites.geojson", limites, pasta)
     if not teste:
         gravar_json("historico.json", historico, pasta)
