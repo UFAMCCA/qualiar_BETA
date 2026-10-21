@@ -102,19 +102,20 @@ VARIANTES_NO_SITE = ("F24", "F24R")
 VARIANTES_FIXAS_NO_SITE = ("CAMS",)
 
 # ---------------------------------------------------------------- classes
+# Cores do quadro oficial do IQAr: verde, amarelo, laranja, vermelho e roxo.
 # Cinco classes do IQAr (Resolução CONAMA 506/2024 e guia do MMA), PM2,5 em
 # µg/m³ na média de 24 h. Cada faixa de concentração corresponde a uma faixa
 # do índice IQAr; dentro dela o índice é interpolado linearmente.
 CLASSES = [
-    {"id": 1, "nome": "Boa", "de": 0, "ate": 15, "iqar": (0, 40), "cor": "#3a9a3f",
+    {"id": 1, "nome": "Boa", "de": 0, "ate": 15, "iqar": (0, 40), "cor": "#4f9d3a",
      "msg": "Sem restrições."},
-    {"id": 2, "nome": "Moderada", "de": 15, "ate": 50, "iqar": (41, 80), "cor": "#e6c229",
+    {"id": 2, "nome": "Moderada", "de": 15, "ate": 50, "iqar": (41, 80), "cor": "#f0d03f",
      "msg": "Grupos sensíveis podem ter sintomas: reduzir esforço prolongado ao ar livre."},
-    {"id": 3, "nome": "Ruim", "de": 50, "ate": 75, "iqar": (81, 120), "cor": "#e5822e",
+    {"id": 3, "nome": "Ruim", "de": 50, "ate": 75, "iqar": (81, 120), "cor": "#e0812f",
      "msg": "Grupos sensíveis evitam atividade ao ar livre; demais pessoas reduzem esforço."},
-    {"id": 4, "nome": "Muito Ruim", "de": 75, "ate": 125, "iqar": (121, 200), "cor": "#b5232b",
+    {"id": 4, "nome": "Muito Ruim", "de": 75, "ate": 125, "iqar": (121, 200), "cor": "#b3221c",
      "msg": "Todos evitam atividade ao ar livre. Grupos sensíveis permanecem em ambiente fechado."},
-    {"id": 5, "nome": "Péssima", "de": 125, "ate": math.inf, "iqar": (201, 400), "cor": "#6b1f5e",
+    {"id": 5, "nome": "Péssima", "de": 125, "ate": math.inf, "iqar": (201, 400), "cor": "#7b2d8e",
      "msg": "Risco para toda a população: permanecer em ambiente fechado, usar PFF2 se precisar sair."},
 ]
 PESSIMA_TOPO = 300.0   # fim da faixa de Péssima na tabela (IQAr 400); acima disso o índice é extrapolado
