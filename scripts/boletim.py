@@ -160,7 +160,7 @@ def cartao(reg, dados, h, em):
 
 # ---------------------------------------------------------------- HTML
 FONTES = ('<link rel="preconnect" href="https://fonts.googleapis.com">'
-          '<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;'
+          '<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&amp;'
           'family=Barlow+Condensed:wght@600;700&amp;display=swap" rel="stylesheet">')
 
 
@@ -212,7 +212,7 @@ def cartao_html(c, em, logo_src):
 .topo{{display:flex;flex-direction:column;align-items:center;text-align:center;gap:16px}}.logo{{height:150px;width:auto;display:block}}
 sub{{font-size:.62em;vertical-align:baseline;position:relative;top:.3em;line-height:0}}
 .org{{font-size:40px;font-weight:700;line-height:1.05;color:#1f3a5f}}.sub{{font-size:26px;font-weight:500;color:#4a5361;margin-top:6px}}
-.cidade{{font-size:58px;font-weight:700;line-height:1;margin:-8px 0 -8px}}
+.cidade{{font-size:80px;font-weight:800;line-height:1;margin:-4px 0 -6px;letter-spacing:-.01em}}
 .bloco{{display:flex;flex-direction:column;gap:14px}}.rotulo{{font-size:24px;font-weight:700;letter-spacing:.12em;color:#4a5361}}
 .caixa{{display:flex;border-radius:20px;overflow:hidden;background:#fff;border:1px solid #dedbd2}}
 .num{{width:300px;flex-shrink:0;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:22px 0;gap:4px}}
@@ -395,10 +395,10 @@ def nota_html(n, c, em, logo_src):
     return f'''<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Nota técnica {e(n["nome"])}</title>{FONTES}
 <style>
 *{{box-sizing:border-box}}body{{margin:0}}
-.card{{width:1080px;height:1350px;padding:48px 72px 52px;display:flex;flex-direction:column;gap:22px;background:#f6f5f1;color:#1d2430;font-family:'Barlow',system-ui,sans-serif}}
-.topo{{display:flex;flex-direction:column;align-items:center;text-align:center;gap:14px}}.logo{{height:130px;width:auto;display:block}}
+.card{{width:1080px;height:1350px;padding:48px 72px 52px;display:flex;flex-direction:column;gap:16px;background:#f6f5f1;color:#1d2430;font-family:'Barlow',system-ui,sans-serif}}
+.topo{{display:flex;flex-direction:column;align-items:center;text-align:center;gap:14px}}.logo{{height:115px;width:auto;display:block}}
 .org{{font-size:36px;font-weight:700;line-height:1.05;color:#1f3a5f}}
-.tit{{font-size:46px;font-weight:700;letter-spacing:.04em;line-height:1.05}}.sub{{font-size:26px;color:#4a5361;margin-top:4px}}
+.cid{{font-size:72px;font-weight:800;line-height:1;margin-bottom:8px}}.tit{{font-size:40px;font-weight:700;letter-spacing:.04em;line-height:1.05}}.sub{{font-size:26px;color:#4a5361;margin-top:4px}}
 .faixa{{border-radius:20px;padding:26px 32px;background:{nv["cor"]};color:{nv["tinta"]};display:flex;flex-direction:column;gap:6px}}
 .faixa .r{{font-size:22px;font-weight:700;letter-spacing:.14em;opacity:.85}}.faixa .n{{font-size:50px;font-weight:700;line-height:1.05}}.faixa .t{{font-size:26px;font-weight:600}}
 .sit{{display:flex;flex-direction:column;gap:6px;font-size:25px;color:#3a4350}}
@@ -409,7 +409,7 @@ ul{{margin:0;padding-left:30px;display:flex;flex-direction:column;gap:8px;font-s
 sub{{font-size:.62em;vertical-align:baseline;position:relative;top:.3em;line-height:0}}
 </style></head><body><div class="card">
   <div class="topo">{logo}<div class="org">{titulo}</div></div>
-  <div><div class="tit">NOTA TÉCNICA Nº {n["numero"]}/{n["ano"]}</div><div class="sub">{e(n["nome"])} · {e(data)}</div></div>
+  <div><div class="cid">{e(n["nome"])}</div><div class="tit">NOTA TÉCNICA Nº {n["numero"]}/{n["ano"]}</div><div class="sub">{e(data)}</div></div>
   <div class="faixa"><div class="r">RECOMENDAÇÃO</div><div class="n">{e(n["titulo"])}</div><div class="t">para o {e(n["turno"])}</div></div>
   <div class="sit"><div class="rot">SITUAÇÃO</div>
     <div class="l">Agora ({e(c["hora"])}): <b>{c["pm"]} µg/m³</b>, {e(c["classe"])}{m24}</div>{prev}</div>
