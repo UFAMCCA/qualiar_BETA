@@ -104,3 +104,6 @@ Com `PURPLEAIR_API_KEY` no ambiente, `python scripts/qualiar.py` faz a coleta re
 | `fogo_regional.json` | focos do INPE fora dos 13 municípios, por célula de 0,25° e hora (72 h) |
 | `diagnostico_regional.json` | IFR, fator de madrugada, mediana observada e origem por estado, hora a hora (só com *diagnostico*) |
 | `validacao_log.json` | previsões emitidas e observações correspondentes (60 dias) |
+
+## Envio de boletins
+A versão atual envia automaticamente o https://github.com/UFAMCCA/qualiar_BETA/boletins.json e https://github.com/UFAMCCA/qualiar_BETA/boletim/atual/municipio.png diretamente para e-mail e telegram configurado
