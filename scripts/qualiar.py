@@ -141,7 +141,22 @@ def qc_ab(a, b):
     return True, "ok"
 
 
+def leitura_10min(s):
+    """Média de 10 min sem correção (como no mapa da PurpleAir), com o mesmo controle de canais."""
+    a, b = s.get("a10"), s.get("b10")
+    canal = C.CANAL_UNICO.get(s.get("id"))
+    if canal:
+        v = a if canal == "a" else b
+        return None if v is None else round(v, 1)
+    if a is None or b is None:
+        v = a if b is None else b
+        return None if v is None else round(v, 1)
+    ok, _ = qc_ab(a, b)
+    return round((a + b) / 2, 1) if ok else None
+
+
 def processar_sensor(s):
+    s["pm10min_bruto"] = leitura_10min(s)
     a, b = s.get("a"), s.get("b")
     canal = C.CANAL_UNICO.get(s.get("id"))
     if canal:   # um canal com defeito conhecido: usa só o outro (config.CANAL_UNICO)
@@ -179,6 +194,7 @@ def coletar_purpleair(chave: str, agora: datetime, caixa=None):
             "id": r.get("sensor_index"), "nome": r.get("name") or f"PA {r.get('sensor_index')}",
             "lat": r.get("latitude"), "lon": r.get("longitude"),
             "a": r.get("pm2.5_cf_1_a"), "b": r.get("pm2.5_cf_1_b"),
+            "a10": r.get("pm2.5_10minute_a"), "b10": r.get("pm2.5_10minute_b"),
             "ur": r.get("humidity"), "t_f": r.get("temperature"),
             "visto": iso(datetime.fromtimestamp(r["last_seen"], UTC)) if r.get("last_seen") else None,
             "interno": r.get("location_type") == 1,
@@ -1275,6 +1291,8 @@ def processar_regiao(reg, a, agora, h0, teste, status, chave, purpleair, amostra
     validos = [s_ for s_ in da_cidade if s_["valido"]]
     minimo = C.SENSORES_MIN if eh_manaus else 1     # no interior há cidades com uma única estação
     p0 = round(median([s_["pm"] for s_ in validos]), 1) if len(validos) >= minimo else None
+    l10 = [s_["pm10min_bruto"] for s_ in validos if s_.get("pm10min_bruto") is not None]
+    pa10 = round(median(l10), 1) if l10 and p0 is not None else None   # leitura no padrão do mapa da PurpleAir
     if teste and eh_manaus and p0 is not None:
         registrar_hora(historico, iso(h0 - timedelta(hours=1)),
                        {k: v[0] for k, v in anterior_sint.items() if k != "90009"},
@@ -1430,6 +1448,7 @@ def processar_regiao(reg, a, agora, h0, teste, status, chave, purpleair, amostra
                                              "valido", "motivo", "visto", "nama", "dist_nama_km", "sinal_chuva", "entorno")}
                      for s_ in sensores],
         "atual": {"mediana": p0, "classe": C.classe_de(p0), "iqar": C.iqar(p0), "n_sensores": len(validos),
+                  "purpleair_10min": pa10, "purpleair_iqar": C.iqar(pa10),
                   "n_total": len(da_cidade), "tendencia_h": tend, "tendencia": tend_txt,
                   "media24": media24, "classe24": C.classe_de(media24), "iqar24": C.iqar(media24), "horas_media24": len(ult24)},
         "historico": [{"t": h["t"], "mediana": h["mediana"], "n": h["n"]} for h in serie[-48:]],

@@ -29,7 +29,11 @@ PA_NW = (-60.15, -2.93)   # (lon, lat)
 PA_SE = (-59.83, -3.18)
 PA_MAX_IDADE_S = 2 * 3600          # ignora sensores sem dados há mais de 2 h
 PA_CAMPOS = ["name", "latitude", "longitude", "pm2.5_cf_1_a", "pm2.5_cf_1_b",
+             "pm2.5_10minute_a", "pm2.5_10minute_b",
              "humidity", "temperature", "last_seen", "location_type"]
+# pm2.5_10minute_a/b: média de 10 min de cada canal, sem correção, como no mapa da PurpleAir.
+# Só para mostrar no cartão a "leitura do sensor" (IQAr da média de 10 min), que é o número
+# que a pessoa vê no mapa da PurpleAir na escala brasileira; a previsão usa o valor corrigido.
 # Sensores internos (location_type = 1) vêm na consulta para que a NAMA seja
 # achada mesmo se estiver cadastrada como interna, mas ficam fora da mediana.
 # Controle de qualidade A/B (critério EPA): descarta se a diferença
@@ -41,7 +45,9 @@ SENSORES_MIN = 2                    # mínimo de sensores válidos para a median
 # o sensor pela divergência entre canais. Conferir de tempos em tempos e tirar daqui quando o
 # dono fizer a manutenção.
 #   206677 SEMA_DCAM_27 (Coari): canal A marca ~1/7 do B, de forma constante, desde pelo menos 20/10/2026.
-CANAL_UNICO = {206677: "b"}
+#   165023 UEA_EducAIR_19 (Parintins): canal B travado perto de 5.000 µg/m³ desde pelo menos 20/10/2026;
+#          o canal A acompanha as duas estações da SEMA.
+CANAL_UNICO = {206677: "b", 165023: "a"}
 
 # ---------------------------------------------------------------- regiões
 # Manaus é a região original (focos do MonitorBETA, NAMA como centro). As

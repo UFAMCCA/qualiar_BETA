@@ -121,6 +121,7 @@ def cartao(reg, dados, h, em):
     out.update({
         "hora": hb.astimezone(TZ).strftime("%Hh"), "pm": round(a["mediana"]), "classe": ca["nome"], "cor": ca["cor"],
         "iqar": a.get("iqar"), "tendencia": a.get("tendencia"),
+        "pa_iqar": a.get("purpleair_iqar"), "pa_10min": a.get("purpleair_10min"),
         "media24": None if a.get("media24") is None else round(a["media24"]),
         "classe24": None if a.get("classe24") is None else classe(a["classe24"])["nome"],
         "n_sensores": a.get("n_sensores"), "idade_h": round(idade, 1)})
@@ -171,6 +172,12 @@ def escala_html():
     return (f'<div class="grade5">{barras}</div><div class="grade5 rot">{rot}</div>')
 
 
+def pa_html(c):
+    if c.get("pa_iqar") is None:
+        return ""
+    return f'<div class="pa">PurpleAir, Brazilian PM2,5 (10 min): {c["pa_iqar"]}</div>'
+
+
 def faixa_html(c):
     if c["prev_min"] == c["prev_max"]:
         return f'<div class="faixa"><div class="col"><div class="n2">{c["prev_min"]}</div><div class="mm">MIN = MAX</div></div></div>'
@@ -191,7 +198,7 @@ def cartao_html(c, em, logo_src):
         m24 = f'Média das últimas 24 h: {c["media24"]} µg/m³ ({e(c["classe24"])})' if c.get("media24") is not None else "Média de 24 h ainda incompleta"
         agora = f'''
   <div class="bloco"><div class="rotulo">AGORA · {e(c["hora"])}</div>
-    <div class="caixa"><div class="num" style="background:{ca["cor"]};color:{tinta(ca)}"><div class="n1">{c["pm"]}</div><div class="u">µg/m³ de MP<sub>2,5</sub></div></div>
+    <div class="caixa"><div class="num" style="background:{ca["cor"]};color:{tinta(ca)}"><div class="n1">{c["pm"]}</div><div class="u">µg/m³ de MP<sub>2,5</sub></div>{pa_html(c)}</div>
       <div class="txt"><div class="cl">{e(c["classe"])}</div><div class="l1">IQAr {c.get("iqar") or "—"} · {e(c.get("tendencia") or "")}</div><div class="l2">{m24}</div>
       {f'<div class="l2 aviso">{e(c["aviso"])}</div>' if c.get("aviso") else ""}</div></div></div>'''
         if c.get("sem_previsao"):
@@ -219,7 +226,7 @@ sub{{font-size:.62em;vertical-align:baseline;position:relative;top:.3em;line-hei
 .n1{{font-family:'Barlow Condensed',sans-serif;font-size:132px;font-weight:700;line-height:.9}}.n2{{font-family:'Barlow Condensed',sans-serif;font-size:92px;font-weight:700;line-height:.9}}
 .faixa{{display:flex;align-items:flex-start;gap:6px}}.faixa .col{{display:flex;flex-direction:column;align-items:center}}.faixa .sep{{font-family:'Barlow Condensed',sans-serif;font-size:72px;font-weight:600;line-height:1.05;opacity:.8}}
 .mm{{font-size:17px;font-weight:600;letter-spacing:.14em;opacity:.75;margin-top:2px}}
-.u{{font-size:26px;font-weight:600}}.txt{{display:flex;flex-direction:column;justify-content:center;gap:8px;padding:22px 36px}}
+.u{{font-size:26px;font-weight:600}}.pa{{font-size:15px;font-weight:500;opacity:.8;margin-top:6px;text-align:center;line-height:1.2;padding:0 10px}}.txt{{display:flex;flex-direction:column;justify-content:center;gap:8px;padding:22px 36px}}
 .cl{{font-size:64px;font-weight:700;line-height:1}}.l1{{font-size:28px;color:#3a4350}}.l2{{font-size:26px;color:#4a5361}}.aviso{{color:#9a3a12;font-weight:600}}
 .orient{{padding:26px 36px;border-radius:20px;background:#1f3a5f;color:#fff;display:flex;flex-direction:column;gap:8px}}
 .ot{{font-size:34px;font-weight:700;line-height:1.1}}.od{{font-size:26px;line-height:1.3;color:#d9e2ee}}
