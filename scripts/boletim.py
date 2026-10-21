@@ -51,6 +51,7 @@ HORARIOS = {
 }
 MINUTO_EMISSAO = 30
 TOLERANCIA_H = 2.0                   # até 2 h depois do horário ainda sai (atrasos do GitHub)
+ESPERA_MAX_MIN = 75                  # espera a coleta da hora cheia até 21h45 (no boletim das 20h30)
 DIAS_SEMANA = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]
 
 
@@ -388,6 +389,14 @@ def main():
     edicao = em.strftime("%Y-%m-%d_%H%M")
     if hist.get("edicao") == edicao and not a.forcar:
         print(f"Boletim {edicao} já publicado.")
+        return
+    # Espera a coleta da hora do boletim (a das 20h fica pronta por volta de 20h30-20h35).
+    # Até ESPERA_MAX_MIN depois do horário, sem ela não emite; depois disso, sai com o que houver.
+    hora_alvo = em.replace(minute=0)
+    hb = (ler(DOCS / "data" / "qualiar.json", {}) or {}).get("hora_base")
+    if (not a.forcar and hb and parse_iso(hb) < hora_alvo
+            and agora < em + timedelta(minutes=ESPERA_MAX_MIN)):
+        print(f"Aguardando a coleta das {hora_alvo.strftime('%Hh')} (última: {parse_iso(hb).astimezone(TZ).strftime('%Hh')}).")
         return
     if a.verificar:
         print(f"Boletim {edicao} a gerar.")
