@@ -183,7 +183,7 @@ def coletar_purpleair(chave: str, agora: datetime, caixa=None):
     return sensores
 
 
-def semear_historico_pa(chave, sensores, agora, historico):
+def semear_historico_pa(chave, sensores, agora, historico, minimo=None):
     """Baixa médias horárias das últimas 24 h de cada sensor (custa mais pontos; usar uma vez)."""
     ini = int((agora - timedelta(hours=26)).timestamp())
     por_hora: dict[str, dict] = {}
@@ -203,12 +203,13 @@ def semear_historico_pa(chave, sensores, agora, historico):
             if tmp["valido"]:
                 por_hora.setdefault(t, {})[str(s["id"])] = tmp["pm"]
     for t, vals in por_hora.items():
-        registrar_hora(historico, t, vals)
+        registrar_hora(historico, t, vals, minimo=minimo)
 
 
-def registrar_hora(historico, t_iso, valores: dict, met_sens: dict | None = None):
+def registrar_hora(historico, t_iso, valores: dict, met_sens: dict | None = None, minimo: int | None = None):
     vals = [v for v in valores.values() if v is not None]
-    if len(vals) < C.SENSORES_MIN:
+    # no interior há cidades com uma ou duas estações: o mínimo vem de quem chama
+    if len(vals) < (C.SENSORES_MIN if minimo is None else minimo):
         return
     item = {"t": t_iso, "mediana": round(median(vals), 1), "n": len(vals), "sensores": valores}
     if met_sens:
@@ -1224,9 +1225,12 @@ def processar_regiao(reg, a, agora, h0, teste, status, chave, purpleair, amostra
                     s_["entorno"] = ent["nome"]
                     sensores.append(s_)
             status["PurpleAir"] = f"ok ({len(sensores)} sensores)"
-            semear = (a.semear and eh_manaus) or (not eh_manaus and len(historico["horas"]) < 3)
+            semear = (a.semear and eh_manaus) or (not eh_manaus and len(historico["horas"]) < 3
+                                                       and not historico.get("estado", {}).get("semeado"))
             if semear:
-                semear_historico_pa(chave, [s_ for s_ in sensores if not s_.get("entorno")], agora, historico)
+                semear_historico_pa(chave, [s_ for s_ in sensores if not s_.get("entorno")], agora, historico,
+                                    minimo=C.SENSORES_MIN if eh_manaus else 1)
+                historico.setdefault("estado", {})["semeado"] = iso(agora)   # uma vez só (custa pontos)
         except Exception as e:
             status["PurpleAir"] = f"erro: {e}"
     da_cidade = [s_ for s_ in sensores if not s_.get("entorno")]
@@ -1268,7 +1272,7 @@ def processar_regiao(reg, a, agora, h0, teste, status, chave, purpleair, amostra
                        {k: v for k, v in anterior_sint.items() if k != "90009"})
     if p0 is not None:
         registrar_hora(historico, iso(h0), {str(s_["id"]): s_["pm"] for s_ in validos},
-                       {str(s_["id"]): [s_["pm"], s_.get("ur"), s_.get("t")] for s_ in validos})
+                       {str(s_["id"]): [s_["pm"], s_.get("ur"), s_.get("t")] for s_ in validos}, minimo=minimo)
     if teste and p0 is not None:
         rnd = random.Random(7)
         p1 = next((h["mediana"] for h in historico["horas"] if h["t"] == iso(h0 - timedelta(hours=1))), p0)
