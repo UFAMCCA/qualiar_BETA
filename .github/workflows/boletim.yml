@@ -1,0 +1,69 @@
+name: Boletim da Comissão (20h30, 02h30, 08h30 e 14h30)
+
+on:
+  schedule:
+    # 00h30, 06h30, 12h30 e 18h30 UTC = 20h30, 02h30, 08h30 e 14h30 em Manaus.
+    # O GitHub atrasa ou pula execuções agendadas; há duas tentativas por horário
+    # e o Google Apps Script (scripts/google_apps_script.gs) dispara no horário certo.
+    # O boletim de um horário sai uma vez só (trava em scripts/boletim.py).
+    - cron: "33,48 0,6,12,18 * * *"
+    - cron: "8,28 1,7,13,19 * * *"     # se a coleta da hora cheia atrasou
+  workflow_dispatch:
+    inputs:
+      forcar:
+        description: "Gerar de novo o boletim do último horário (e reenviar pelo Telegram)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dados          # o mesmo da coleta: espera a coleta da hora terminar
+  cancel-in-progress: false
+
+jobs:
+  boletim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Conferir o horário
+        id: v
+        run: python scripts/boletim.py --verificar
+      - name: Instalar o navegador que desenha os cartões
+        if: ${{ steps.v.outputs.novo == '1' || inputs.forcar }}
+        run: |
+          pip install playwright==1.47.0
+          python -m playwright install --with-deps chromium
+      - name: Gerar o boletim
+        if: ${{ steps.v.outputs.novo == '1' || inputs.forcar }}
+        run: python scripts/boletim.py ${{ inputs.forcar && '--forcar' || '' }}
+      - name: Publicar na página
+        if: ${{ steps.v.outputs.novo == '1' || inputs.forcar }}
+        run: |
+          git config user.name "qualiar-ufam[bot]"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A docs/boletim
+          if git diff --cached --quiet; then echo "Nada a publicar."; exit 0; fi
+          git commit -m "Boletim: $(TZ=America/Manaus date +'%d/%m %Hh%M')"
+          for i in 1 2 3; do
+            git pull --rebase -X theirs origin "${GITHUB_REF_NAME:-main}" && git push && exit 0
+            git rebase --abort 2>/dev/null || true
+            sleep $((i * 5))
+          done
+          echo "Não foi possível publicar o boletim depois de 3 tentativas." >&2
+          exit 1
+      - name: Enviar pelo Telegram
+        if: ${{ steps.v.outputs.novo == '1' || inputs.forcar }}
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT: ${{ secrets.TELEGRAM_CHAT }}
+          TELEGRAM_CIDADES: ${{ vars.TELEGRAM_CIDADES }}
+        run: python scripts/boletim.py --enviar
+      # O e-mail sai pelo Google Apps Script (verificarBoletim), que lê a página publicada.
