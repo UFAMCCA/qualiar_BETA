@@ -180,14 +180,22 @@ function enviarBoletimPorEmail(forcar) {
     const img = UrlFetchApp.fetch(BOLETIM.pagina + b.imagens[c.id], { muteHttpExceptions: true });
     if (img.getResponseCode() === 200) inline['c_' + c.id] = img.getBlob().setName(c.id + '.png');
   });
+  const notas = (b.notas || []).filter(n => n.imagem);
+  notas.forEach(n => {
+    const img = UrlFetchApp.fetch(BOLETIM.pagina + n.imagem, { muteHttpExceptions: true });
+    if (img.getResponseCode() === 200) inline['n_' + n.cidade] = img.getBlob().setName('nota-' + n.cidade + '.png');
+  });
   const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const linhas = esc(b.whatsapp).replace(/\*(.+?)\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
   const imgs = cartoes.filter(c => inline['c_' + c.id])
     .map(c => `<p><img src="cid:c_${c.id}" alt="${esc(c.nome)}" style="width:100%;max-width:540px;border-radius:8px"></p>`).join('');
-  const html = `<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.45;color:#1d2430">${linhas}${imgs}` +
+  const blocoNotas = notas.length ? '<h3 style="margin:18px 0 6px">Notas técnicas da Comissão</h3>' + notas.map(n =>
+      (inline['n_' + n.cidade] ? `<p><img src="cid:n_${n.cidade}" alt="Nota técnica ${n.numero}/${n.ano}: ${esc(n.nome)}" style="width:100%;max-width:540px;border-radius:8px"></p>` : '') +
+      `<p style="white-space:pre-line">${esc(n.texto).replace(/\*(.+?)\*/g, '<b>$1</b>')}</p>`).join('') : '';
+  const html = `<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.45;color:#1d2430">${linhas}${blocoNotas}${imgs}` +
     `<p style="color:#5b6473;font-size:13px">Página pública: <a href="${BOLETIM.pagina}">${BOLETIM.pagina}</a></p></div>`;
   const para = props.getProperty('EMAIL_BOLETIM') || Session.getEffectiveUser().getEmail();
-  const assunto = 'Boletim da qualidade do ar · ' + (b.arquivo && b.arquivo[0] ? b.arquivo[0].data : b.edicao);
+  const assunto = (notas.length ? 'NOTA TÉCNICA + ' : '') + 'Boletim da qualidade do ar · ' + (b.arquivo && b.arquivo[0] ? b.arquivo[0].data : b.edicao);
   MailApp.sendEmail({ to: para, subject: assunto, body: b.whatsapp, htmlBody: html, inlineImages: inline, name: 'Comissão de Qualidade do Ar da UFAM' });
   props.setProperty('ULTIMO_EMAIL_BOLETIM', b.edicao);
   console.log('Boletim ' + b.edicao + ' enviado por e-mail para ' + para);
