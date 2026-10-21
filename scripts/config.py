@@ -37,6 +37,11 @@ PA_CAMPOS = ["name", "latitude", "longitude", "pm2.5_cf_1_a", "pm2.5_cf_1_b",
 QC_DIF_ABS = 5.0
 QC_DIF_REL = 0.70
 SENSORES_MIN = 2                    # mínimo de sensores válidos para a mediana
+# Sensores com um canal (A ou B) com defeito conhecido: usa só o canal bom, em vez de descartar
+# o sensor pela divergência entre canais. Conferir de tempos em tempos e tirar daqui quando o
+# dono fizer a manutenção.
+#   206677 SEMA_DCAM_27 (Coari): canal A marca ~1/7 do B, de forma constante, desde pelo menos 20/10/2026.
+CANAL_UNICO = {206677: "b"}
 
 # ---------------------------------------------------------------- regiões
 # Manaus é a região original (focos do MonitorBETA, NAMA como centro). As

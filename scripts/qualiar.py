@@ -143,6 +143,15 @@ def qc_ab(a, b):
 
 def processar_sensor(s):
     a, b = s.get("a"), s.get("b")
+    canal = C.CANAL_UNICO.get(s.get("id"))
+    if canal:   # um canal com defeito conhecido: usa só o outro (config.CANAL_UNICO)
+        v = a if canal == "a" else b
+        s["valido"] = v is not None
+        s["motivo"] = f"só o canal {canal.upper()} (o outro está com defeito)"
+        s["pm_bruto"] = None if v is None else round(v, 1)
+        s["pm"] = round(correcao_epa(v, s.get("ur")), 1) if v is not None else None
+        s["classe"] = C.classe_de(s["pm"])
+        return s
     ok, motivo = qc_ab(a, b)
     vals = [v for v in (a, b) if v is not None]
     s["valido"] = bool(ok and vals)
@@ -199,7 +208,7 @@ def semear_historico_pa(chave, sensores, agora, historico, minimo=None):
         for linha in d.get("data", []):
             r = dict(zip(campos, linha))
             t = iso(hora_cheia(datetime.fromtimestamp(r["time_stamp"], UTC)))
-            tmp = processar_sensor({"a": r.get("pm2.5_cf_1_a"), "b": r.get("pm2.5_cf_1_b"), "ur": r.get("humidity")})
+            tmp = processar_sensor({"id": s["id"], "a": r.get("pm2.5_cf_1_a"), "b": r.get("pm2.5_cf_1_b"), "ur": r.get("humidity")})
             if tmp["valido"]:
                 por_hora.setdefault(t, {})[str(s["id"])] = tmp["pm"]
     for t, vals in por_hora.items():
@@ -1226,11 +1235,11 @@ def processar_regiao(reg, a, agora, h0, teste, status, chave, purpleair, amostra
                     sensores.append(s_)
             status["PurpleAir"] = f"ok ({len(sensores)} sensores)"
             semear = (a.semear and eh_manaus) or (not eh_manaus and len(historico["horas"]) < 3
-                                                       and not historico.get("estado", {}).get("semeado"))
+                                                       and not historico.get("estado", {}).get("semeado_em"))
             if semear:
                 semear_historico_pa(chave, [s_ for s_ in sensores if not s_.get("entorno")], agora, historico,
                                     minimo=C.SENSORES_MIN if eh_manaus else 1)
-                historico.setdefault("estado", {})["semeado"] = iso(agora)   # uma vez só (custa pontos)
+                historico.setdefault("estado", {})["semeado_em"] = iso(agora)   # uma vez só (custa pontos)
         except Exception as e:
             status["PurpleAir"] = f"erro: {e}"
     da_cidade = [s_ for s_ in sensores if not s_.get("entorno")]
