@@ -1,1 +1,1 @@
-{"type":"FeatureCollection","features":[]}
+{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-65.92655,-9.04648]},"properties":{"id":"Eb6fc8fed51","municipio":"Lábrea","categoria":"extinto","provavel_incendio":false,"dist_km":362.0,"rumo":242.0,"idade_h":45.6,"frp_max":10.15,"n_pixels":1,"duracao_h":0.0,"ultima_deteccao":"2026-10-20T18:38:00Z","primeira_deteccao":"2026-10-20T18:38:00Z","fim_emissao":"2026-10-20T19:36:00Z","influencia":{"3":0.0}}}]}
