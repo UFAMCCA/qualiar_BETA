@@ -1,1 +1,1 @@
-{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-68.03054,-3.13733]},"properties":{"id":"Eec8358cc7a","municipio":"Santo Antônio do Içá","categoria":"extinto","provavel_incendio":false,"dist_km":261.4,"rumo":58.0,"idade_h":45.9,"frp_max":3.46,"n_pixels":1,"duracao_h":0.0,"ultima_deteccao":"2026-10-21T18:21:00Z","primeira_deteccao":"2026-10-21T18:21:00Z","fim_emissao":"2026-10-21T19:17:00Z","influencia":{"0":0.0}}}]}
+{"type":"FeatureCollection","features":[]}
