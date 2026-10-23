@@ -1,1 +1,1 @@
-{"type":"FeatureCollection","features":[]}
+{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-61.55544,-7.92758]},"properties":{"id":"E7320ab7242","municipio":"Manicoré","categoria":"extinto","provavel_incendio":false,"dist_km":168.4,"rumo":106.0,"idade_h":15.1,"frp_max":0.85,"n_pixels":1,"duracao_h":0.0,"ultima_deteccao":"2026-10-23T05:06:00Z","primeira_deteccao":"2026-10-23T05:06:00Z","fim_emissao":"2026-10-23T06:01:00Z","influencia":{"12":0.039}}}]}
