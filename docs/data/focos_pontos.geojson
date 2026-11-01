@@ -1,1 +1,1 @@
-{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-58.58225,-3.53289]},"properties":{"id":"E3e807f0aa6","municipio":"Itacoatiara","categoria":"extinto","provavel_incendio":false,"dist_km":161.2,"rumo":108.0,"idade_h":15.4,"frp_max":22.07,"n_pixels":2,"duracao_h":0.0,"ultima_deteccao":"2026-10-31T17:49:00Z","primeira_deteccao":"2026-10-31T17:49:00Z","fim_emissao":"2026-10-31T18:34:00Z","influencia":{"6":0.076}}}]}
+{"type":"FeatureCollection","features":[]}
