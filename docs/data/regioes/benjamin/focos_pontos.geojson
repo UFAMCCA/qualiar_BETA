@@ -1,1 +1,1 @@
-{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-68.96066,-3.44191]},"properties":{"id":"Ee86df04b12","municipio":"São Paulo de Olivença","categoria":"extinto","provavel_incendio":false,"dist_km":158.2,"rumo":48.0,"idade_h":21.4,"frp_max":4.39,"n_pixels":1,"duracao_h":0.0,"ultima_deteccao":"2026-10-31T17:49:00Z","primeira_deteccao":"2026-10-31T17:49:00Z","fim_emissao":"2026-10-31T18:32:00Z","influencia":{"12":0.002}}}]}
+{"type":"FeatureCollection","features":[]}
