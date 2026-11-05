@@ -1,1 +1,1 @@
-{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-69.43821,-3.81838]},"properties":{"id":"E99ee76c12b","municipio":"Tabatinga","categoria":"extinto","provavel_incendio":false,"dist_km":90.8,"rumo":46.0,"idade_h":14.9,"frp_max":5.04,"n_pixels":1,"duracao_h":0.0,"ultima_deteccao":"2026-11-04T18:17:00Z","primeira_deteccao":"2026-11-04T18:17:00Z","fim_emissao":"2026-11-04T18:57:00Z","influencia":{"3":0.184}}}]}
+{"type":"FeatureCollection","features":[]}
