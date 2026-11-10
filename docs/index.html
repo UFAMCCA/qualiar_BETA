@@ -31,8 +31,22 @@
   });
 </script>
 
+
+
 </head>
 <body>
+
+<button
+  type="button"
+  id="notification-button"
+  aria-label="Ativar notificações"
+  title="Ativar notificações">
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path>
+    <path d="M10 21h4"></path>
+  </svg>
+</button>
+
 <header class="topo">
   <div class="logos">
     <img src="img/logo-pcu.svg" alt="PCU UFAM" height="40">
@@ -135,5 +149,36 @@
 <script src="vendor/leaflet.js"></script>
 <script src="comum.js"></script>
 <script src="app.js"></script>
+
+<script>
+  // Solicita permissão e reinscreve o usuário nas notificações via OneSignal.
+  document.getElementById("notification-button").addEventListener("click", function () {
+    const button = this;
+    button.disabled = true;
+
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    window.OneSignalDeferred.push(async function (OneSignal) {
+      try {
+        if (OneSignal.Notifications.permissionNative === "denied") {
+          alert("As notificações estão bloqueadas nas configurações do navegador. Altere a permissão deste site para permitir notificações e tente novamente.");
+          return;
+        }
+
+        const permissionGranted = await OneSignal.Notifications.requestPermission();
+
+        if (permissionGranted) {
+          await OneSignal.User.PushSubscription.optIn();
+          alert("Notificações ativadas com sucesso!");
+        }
+      } catch (error) {
+        console.error("Erro ao ativar notificações:", error);
+        alert("Não foi possível ativar as notificações. Tente novamente.");
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });
+</script>
+
 </body>
 </html>

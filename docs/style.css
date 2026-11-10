@@ -221,3 +221,52 @@ h1, h2, h3 { text-wrap: balance; margin: 0; }
 .tabela-s.perfil td, .tabela-s.perfil th { vertical-align: middle; }
 .seta-vento { display: inline-flex; align-items: center; gap: 6px; line-height: 1.15; }
 .seta-vento small { color: var(--tinta-3); }
+
+/* ---------- botão de notificações OneSignal ---------- */
+/* Botão discreto para ativar ou reativar as notificações. */
+  #notification-button {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 2000;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid #d8dce2;
+    border-radius: 50%;
+    background: #fff;
+    color: #555;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+    cursor: pointer;
+  }
+  #notification-button:hover {
+    background: #f3f5f7;
+  }
+  #notification-button:focus-visible {
+    outline: 2px solid #1976d2;
+    outline-offset: 3px;
+  }
+  #notification-button:disabled {
+    opacity: 0.6;
+    cursor: wait;
+  }
+  #notification-button svg {
+    width: 21px;
+    height: 21px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  @media (max-width: 600px) {
+    #notification-button {
+      right: 12px;
+      bottom: 12px;
+      width: 42px;
+      height: 42px;
+    }
+  }
