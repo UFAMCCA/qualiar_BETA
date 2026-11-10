@@ -18,6 +18,19 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="vendor/leaflet.css">
 <link rel="stylesheet" href="style.css">
+
+<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+<script>
+  window.OneSignalDeferred = window.OneSignalDeferred || [];
+  OneSignalDeferred.push(async function(OneSignal) {
+    await OneSignal.init({
+      appId: "7796de83-8668-4e2d-9cdc-9b90173414d8",
+      serviceWorkerPath: "/qualiar_BETA/OneSignalSDKWorker.js",
+      serviceWorkerParam: { scope: "/qualiar_BETA/" }
+    });
+  });
+</script>
+
 </head>
 <body>
 <header class="topo">
