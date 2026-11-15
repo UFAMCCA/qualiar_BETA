@@ -1,1 +1,1 @@
-{"type":"FeatureCollection","features":[]}
+{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-72.72308,-7.55444]},"properties":{"id":"Ec38c7583de","municipio":"Cruzeiro do Sul (AC)","categoria":"ativo","provavel_incendio":false,"dist_km":461.5,"rumo":220.0,"idade_h":10.0,"frp_max":0.75,"n_pixels":1,"duracao_h":0.0,"ultima_deteccao":"2026-11-15T06:14:00Z","primeira_deteccao":"2026-11-15T06:14:00Z","fim_emissao":null,"influencia":{}}}]}
