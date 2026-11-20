@@ -1,1 +1,1 @@
-{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-66.74093,-2.78468]},"properties":{"id":"Eb34afdd63a","municipio":"Jutaí","categoria":"extinto","provavel_incendio":false,"dist_km":405.7,"rumo":64.0,"idade_h":23.7,"frp_max":2.23,"n_pixels":1,"duracao_h":0.0,"ultima_deteccao":"2026-11-19T18:34:00Z","primeira_deteccao":"2026-11-19T18:34:00Z","fim_emissao":"2026-11-19T19:17:00Z","influencia":{"24":0.0}}}]}
+{"type":"FeatureCollection","features":[]}
