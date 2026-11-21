@@ -1,1 +1,1 @@
-{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-59.42581,0.16829]},"properties":{"id":"E8c3ff5b3ce","municipio":"Urucará","categoria":"extinto","provavel_incendio":false,"dist_km":384.0,"rumo":343.0,"idade_h":43.3,"frp_max":4.02,"n_pixels":1,"duracao_h":0.0,"ultima_deteccao":"2026-11-19T16:54:00Z","primeira_deteccao":"2026-11-19T16:54:00Z","fim_emissao":"2026-11-19T17:36:00Z","influencia":{"0":0.0}}}]}
+{"type":"FeatureCollection","features":[]}
