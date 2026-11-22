@@ -1,1 +1,1 @@
-{"type":"FeatureCollection","features":[]}
+{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-60.34364,-0.44616]},"properties":{"id":"E56529bb442","municipio":"Presidente Figueiredo","categoria":"extinto","provavel_incendio":false,"dist_km":296.9,"rumo":352.0,"idade_h":27.2,"frp_max":7.17,"n_pixels":1,"duracao_h":0.0,"ultima_deteccao":"2026-11-21T17:00:00Z","primeira_deteccao":"2026-11-21T17:00:00Z","fim_emissao":"2026-11-21T17:56:00Z","influencia":{"6":0.0}}}]}
