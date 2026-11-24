@@ -1,1 +1,1 @@
-{"type":"FeatureCollection","features":[]}
+{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[-72.99931,-7.53866]},"properties":{"id":"E280fd263e5","municipio":"Mâncio Lima (AC)","categoria":"extinto","provavel_incendio":false,"dist_km":480.5,"rumo":223.0,"idade_h":42.4,"frp_max":13.46,"n_pixels":2,"duracao_h":0.0,"ultima_deteccao":"2026-11-22T20:50:00Z","primeira_deteccao":"2026-11-22T20:50:00Z","fim_emissao":"2026-11-23T01:16:00Z","influencia":{"6":0.0}}}]}
